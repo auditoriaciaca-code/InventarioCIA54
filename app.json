@@ -10,13 +10,18 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.ciaca.inventariocia",
       "adaptiveIcon": {
         "backgroundColor": "#1a5f2a",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
@@ -25,6 +30,12 @@
       "expo-sqlite",
       "expo-camera",
       "expo-image-picker"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3b00fee1-2732-43d7-9360-80f8235c999e"
+      }
+    },
+    "owner": "ajr01s-team"
   }
 }
