@@ -11,8 +11,8 @@ export default function ContainerSelector({ tara, onSelect }: Props) {
   const [custom, setCustom] = useState(false)
 
   const opciones = [
-    { id: 'saco', nombre: 'Saco', tara: 0.5, icono: '🛍️' },
-    { id: 'cajon', nombre: 'Cajón', tara: 2.3, icono: '📦' },
+    { id: 'tula', nombre: 'TULA', tara: 2, icono: '🛍️' },
+    { id: 'alambre', nombre: 'ALAMBRE', tara: 1, icono: '📦' },
     { id: 'otro', nombre: 'Otro', tara: 0, icono: '⚖️' },
   ]
 
@@ -116,6 +116,8 @@ const styles = StyleSheet.create({
     borderRadius: SIZES.radius,
     padding: 14,
     fontSize: 16,
+    backgroundColor: COLORS.card,
+    color: COLORS.text,
   },
   suffix: {
     position: 'absolute',

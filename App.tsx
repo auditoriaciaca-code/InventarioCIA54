@@ -2,12 +2,18 @@ import { useEffect, useState } from 'react'
 import { StatusBar } from 'expo-status-bar'
 import { NavigationContainer } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native'
+import { View, Text, Image, ActivityIndicator, StyleSheet, Platform } from 'react-native'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import RegistroScreen from './src/screens/RegistroScreen'
 import InventarioScreen from './src/screens/InventarioScreen'
 import ResumenScreen from './src/screens/ResumenScreen'
+import ChatRegistroScreen from './src/screens/ChatRegistroScreen'
 import { initDatabase } from './src/services/database'
 import { COLORS } from './src/constants/theme'
+import { SesionProvider } from './src/context/SesionContext'
+import { ComparacionesProvider } from './src/context/ComparacionesContext'
+import SesionSelector from './src/components/SesionSelector'
+import HeaderSesionButton from './src/components/HeaderSesionButton'
 
 const Tab = createBottomTabNavigator()
 
@@ -41,57 +47,82 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
-      <StatusBar style="dark" />
-      <Tab.Navigator
-        screenOptions={{
-          tabBarActiveTintColor: COLORS.primary,
-          tabBarInactiveTintColor: COLORS.textLight,
-          tabBarStyle: {
-            backgroundColor: COLORS.card,
-            borderTopColor: COLORS.border,
-            paddingBottom: 5,
-            height: 60,
-          },
-          tabBarLabelStyle: {
-            fontWeight: '600',
-            fontSize: 11,
-          },
-          headerStyle: {
-            backgroundColor: COLORS.primary,
-          },
-          headerTintColor: '#fff',
-          headerTitleStyle: {
-            fontWeight: '700',
-          },
-        }}
-      >
-        <Tab.Screen
-          name="Registro"
-          component={RegistroScreen}
-          options={{
-            tabBarIcon: ({ color }) => <Text style={{ fontSize: 22 }}>📝</Text>,
-            headerTitle: 'CIA A.C.A - Control de Inventario',
+    <SafeAreaProvider>
+    <SesionProvider>
+    <ComparacionesProvider>
+      <SesionSelector />
+      <NavigationContainer>
+        <StatusBar style="dark" />
+        <Tab.Navigator
+          screenOptions={{
+            tabBarActiveTintColor: COLORS.primary,
+            tabBarInactiveTintColor: COLORS.textLight,
+            tabBarStyle: {
+              backgroundColor: COLORS.card,
+              borderTopColor: COLORS.border,
+              paddingBottom: 10,
+              height: 68,
+              ...Platform.select({
+                android: { elevation: 8 },
+              }),
+            },
+            tabBarLabelStyle: {
+              fontWeight: '600',
+              fontSize: 11,
+            },
+            headerStyle: {
+              backgroundColor: COLORS.primary,
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: '700',
+            },
+            headerRight: () => <HeaderSesionButton />,
           }}
-        />
-        <Tab.Screen
-          name="Inventario"
-          component={InventarioScreen}
-          options={{
-            tabBarIcon: ({ color }) => <Text style={{ fontSize: 22 }}>📋</Text>,
-            headerTitle: 'Inventario',
-          }}
-        />
-        <Tab.Screen
-          name="Resumen"
-          component={ResumenScreen}
-          options={{
-            tabBarIcon: ({ color }) => <Text style={{ fontSize: 22 }}>📊</Text>,
-            headerTitle: 'Resumen',
-          }}
-        />
-      </Tab.Navigator>
-    </NavigationContainer>
+        >
+          <Tab.Screen
+            name="Registro"
+            component={RegistroScreen}
+            options={{
+              tabBarIcon: ({ color }) => <Text style={{ fontSize: 22 }}>📝</Text>,
+              headerTitle: () => (
+                <View style={styles.headerTitleRow}>
+                  <Image source={require('./assets/images/logo-icono.png')} style={styles.headerLogo} />
+                  <Text style={styles.headerTitleText}>Control de Inventario</Text>
+                </View>
+              ),
+            }}
+          />
+          <Tab.Screen
+            name="Inventario"
+            component={InventarioScreen}
+            options={{
+              tabBarIcon: ({ color }) => <Text style={{ fontSize: 22 }}>📋</Text>,
+              headerTitle: 'Inventario',
+            }}
+          />
+          <Tab.Screen
+            name="Resumen"
+            component={ResumenScreen}
+            options={{
+              tabBarIcon: ({ color }) => <Text style={{ fontSize: 22 }}>📊</Text>,
+              headerTitle: 'Resumen',
+            }}
+          />
+          <Tab.Screen
+            name="Rapido"
+            component={ChatRegistroScreen}
+            options={{
+              tabBarIcon: ({ color }) => <Text style={{ fontSize: 22 }}>💬</Text>,
+              tabBarLabel: 'Rápido',
+              headerTitle: 'Registro Rápido',
+            }}
+          />
+        </Tab.Navigator>
+      </NavigationContainer>
+    </ComparacionesProvider>
+    </SesionProvider>
+    </SafeAreaProvider>
   )
 }
 
@@ -101,5 +132,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.bg,
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerLogo: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  headerTitleText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700',
   },
 })

@@ -13,14 +13,28 @@ export async function initDatabase(): Promise<void> {
       icono TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS inv_sesiones (
+      id TEXT PRIMARY KEY,
+      nombre_operador TEXT NOT NULL,
+      area_id TEXT DEFAULT '',
+      fecha TEXT NOT NULL,
+      activa INTEGER DEFAULT 1,
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS inv_registros (
       id TEXT PRIMARY KEY,
+      sesion_id TEXT NOT NULL,
+      area_id TEXT DEFAULT '',
       material_id TEXT NOT NULL,
+      referencia_codigo TEXT DEFAULT '',
+      referencia_descripcion TEXT DEFAULT '',
       contenedor TEXT NOT NULL,
       tara REAL NOT NULL DEFAULT 0,
       peso_bruto REAL NOT NULL,
       peso_neto REAL NOT NULL,
       observaciones TEXT DEFAULT '',
+      codigo_barras TEXT DEFAULT '',
       fotos_count INTEGER DEFAULT 0,
       created_at TEXT NOT NULL,
       created_by TEXT,
@@ -36,9 +50,42 @@ export async function initDatabase(): Promise<void> {
       orden INTEGER DEFAULT 0,
       FOREIGN KEY (registro_id) REFERENCES inv_registros(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS inv_lotes (
+      id TEXT PRIMARY KEY,
+      codigo TEXT NOT NULL,
+      area_id TEXT NOT NULL DEFAULT '',
+      estado TEXT NOT NULL DEFAULT 'pendiente'
+    );
+    CREATE INDEX IF NOT EXISTS idx_lotes_area_codigo ON inv_lotes(area_id, codigo);
   `)
 
   await seedMateriales()
+  await migrarBase()
+}
+
+async function migrarBase(): Promise<void> {
+  try {
+    await db.execAsync(`ALTER TABLE inv_registros ADD COLUMN referencia_codigo TEXT DEFAULT ''`)
+  } catch {}
+  try {
+    await db.execAsync(`ALTER TABLE inv_registros ADD COLUMN referencia_descripcion TEXT DEFAULT ''`)
+  } catch {}
+  try {
+    await db.execAsync(`ALTER TABLE inv_registros ADD COLUMN sesion_id TEXT DEFAULT ''`)
+  } catch {}
+  try {
+    await db.execAsync(`ALTER TABLE inv_registros ADD COLUMN codigo_barras TEXT DEFAULT ''`)
+  } catch {}
+  try {
+    await db.execAsync(`ALTER TABLE inv_sesiones ADD COLUMN area_id TEXT DEFAULT ''`)
+  } catch {}
+  try {
+    await db.execAsync(`ALTER TABLE inv_registros ADD COLUMN area_id TEXT DEFAULT ''`)
+  } catch {}
+  try {
+    await db.execAsync(`ALTER TABLE inv_registros ADD COLUMN lote_codigo TEXT DEFAULT ''`)
+  } catch {}
 }
 
 async function seedMateriales(): Promise<void> {
@@ -46,12 +93,17 @@ async function seedMateriales(): Promise<void> {
   if (count && count.count > 0) return
 
   const materiales = [
-    { id: 'cobre', nombre: 'Cobre', codigo: 'CB-001', icono: '🟤' },
-    { id: 'pote', nombre: 'Pote', codigo: 'PT-002', icono: '⚪' },
-    { id: 'aluminio', nombre: 'Aluminio', codigo: 'AL-003', icono: '⚙️' },
-    { id: 'bronce', nombre: 'Bronce', codigo: 'BR-004', icono: '🟠' },
-    { id: 'laton', nombre: 'Latón', codigo: 'LT-005', icono: '🟡' },
-    { id: 'acero', nombre: 'Acero', codigo: 'AC-006', icono: '⚫' },
+    { id: 'aceros', nombre: 'Aceros', codigo: 'ACEROS', icono: '⚙️' },
+    { id: 'aluminios', nombre: 'Aluminios', codigo: 'ALUMINIOS', icono: '⚪' },
+    { id: 'pote', nombre: 'POTE', codigo: 'POTE', icono: '🥫' },
+    { id: 'bronce', nombre: 'BRONCE', codigo: 'BRONCE', icono: '🟠' },
+    { id: 'cobre', nombre: 'Cobre', codigo: 'COBRE', icono: '🟤' },
+    { id: 'radiadores_cobre', nombre: 'Radiadores de Cobre', codigo: 'RAD-COBRE', icono: '🔴' },
+    { id: 'radiadores_mixtos', nombre: 'Radiadores Mixtos', codigo: 'RAD-MIX', icono: '🔶' },
+    { id: 'scrap', nombre: 'SCRAP', codigo: 'SCRAP', icono: '🗑️' },
+    { id: 'baterias', nombre: 'BATERIAS', codigo: 'BATERIAS', icono: '🔋' },
+    { id: 'electronica', nombre: 'ELECTRONICA', codigo: 'ELECTRONICA', icono: '💻' },
+    { id: 'chatarra_hierro', nombre: 'CHATARRA DE HIERRO', codigo: 'HIERRO', icono: '🪨' },
   ]
 
   for (const m of materiales) {

@@ -7,24 +7,30 @@ import { ResumenMaterial, RegistroPesada } from '../types'
 import { MATERIAL_MAP } from '../constants/materiales'
 import { getDatabase } from '../services/database'
 import { COLORS, SIZES } from '../constants/theme'
+import { useSesion } from '../context/SesionContext'
+import { File, Paths } from 'expo-file-system'
+import DetalleMaterial from '../components/DetalleMaterial'
 
 export default function ResumenScreen() {
+  const { sesion } = useSesion()
   const [registros, setRegistros] = useState<RegistroPesada[]>([])
   const [modoOffline, setModoOffline] = useState(true)
   const [sonido, setSonido] = useState(true)
   const [autoSync, setAutoSync] = useState(false)
+  const [materialSeleccionado, setMaterialSeleccionado] = useState<ResumenMaterial | null>(null)
 
   useFocusEffect(
     useCallback(() => {
-      cargarRegistros()
-    }, [])
+      if (sesion) cargarRegistros()
+    }, [sesion])
   )
 
   async function cargarRegistros() {
     try {
       const db = getDatabase()
       const rows = await db.getAllAsync<RegistroPesada>(
-        'SELECT * FROM inv_registros ORDER BY created_at DESC'
+        'SELECT * FROM inv_registros WHERE sesion_id = ? ORDER BY created_at ASC',
+        [sesion?.id || '']
       )
       setRegistros(rows)
     } catch (error) {
@@ -37,14 +43,30 @@ export default function ResumenScreen() {
 
   async function exportarPDF() {
     try {
-      const rows = resumen
+      const refMap = new Map<string, { desc: string; total: number; count: number }>()
+      for (const r of registros) {
+        const key = r.referencia_codigo || r.material_id
+        const neto = r.peso_bruto - r.tara
+        const existing = refMap.get(key)
+        if (existing) {
+          existing.total += neto
+          existing.count++
+        } else {
+          refMap.set(key, { desc: r.referencia_descripcion || key, total: neto, count: 1 })
+        }
+      }
+
+      const sorted = Array.from(refMap.entries()).sort(([a], [b]) => a.localeCompare(b))
+      const totalGeneral = sorted.reduce((s, [, v]) => s + v.total, 0)
+
+      const rows = sorted
         .map(
-          r =>
+          ([codigo, item]) =>
             `<tr>
-              <td>${r.material_icono} ${r.material_nombre}</td>
-              <td>${r.cantidad}</td>
-              <td>${r.total_neto.toFixed(2)} kg</td>
-              <td>${r.porcentaje.toFixed(1)}%</td>
+              <td>${codigo}</td>
+              <td>${item.desc}</td>
+              <td>${item.count}</td>
+              <td style="text-align:right">${item.total.toFixed(2)} kg</td>
             </tr>`
         )
         .join('')
@@ -54,24 +76,38 @@ export default function ResumenScreen() {
           <head>
             <meta charset="utf-8">
             <style>
-              body { font-family: monospace; padding: 20px; }
-              h1 { text-align: center; font-size: 18px; }
-              table { width: 100%; border-collapse: collapse; }
-              th, td { border: 1px solid #000; padding: 6px; text-align: left; }
-              th { background: #f0f0f0; }
-              .total { font-weight: bold; text-align: center; margin-top: 15px; }
+              body { font-family: 'Courier New', monospace; padding: 30px; }
+              h1 { text-align: center; font-size: 20px; color: #1F4E79; margin-bottom: 5px; }
+              .subtitle { text-align: center; color: #666; font-size: 12px; margin-bottom: 20px; }
+              table { width: 100%; border-collapse: collapse; font-size: 11px; }
+              th { background: #1F4E79; color: #fff; padding: 8px; text-align: left; font-weight: bold; }
+              td { border: 1px solid #ccc; padding: 6px; }
+              tr:nth-child(even) { background: #f5f8fc; }
+              .total-row td { font-weight: bold; background: #1F4E79; color: #fff; padding: 8px; font-size: 13px; }
+              .footer { margin-top: 30px; text-align: center; font-size: 10px; color: #999; }
             </style>
           </head>
           <body>
-            <h1>CIA A.C.A - Inventario</h1>
-            <p>Fecha: ${new Date().toLocaleDateString('es-MX')} | Total: ${total.toFixed(2)} kg</p>
+            <h1>CIA A.C.A</h1>
+            <div class="subtitle">Inventario de Materiales</div>
+            <div style="margin-bottom:15px; font-size:12px; color:#333;">
+              <strong>Operador:</strong> ${sesion?.nombre_operador || '—'} &nbsp;|&nbsp;
+              <strong>Fecha:</strong> ${new Date().toLocaleDateString('es-MX')} &nbsp;|&nbsp;
+              <strong>Total registros:</strong> ${registros.length}
+            </div>
             <table>
               <thead>
-                <tr><th>Material</th><th>Registros</th><th>Total Neto</th><th>%</th></tr>
+                <tr><th>Código</th><th>Material</th><th>Pesadas</th><th>Total</th></tr>
               </thead>
-              <tbody>${rows}</tbody>
+              <tbody>
+                ${rows}
+                <tr class="total-row">
+                  <td colspan="3" style="text-align:right">TOTAL GENERAL</td>
+                  <td style="text-align:right">${totalGeneral.toFixed(2)} kg</td>
+                </tr>
+              </tbody>
             </table>
-            <div class="total">TOTAL GENERAL: ${total.toFixed(2)} kg</div>
+            <div class="footer">Generado por Sistema de Inventario CIA — ${new Date().toLocaleString('es-MX')}</div>
           </body>
         </html>`
 
@@ -86,8 +122,108 @@ export default function ResumenScreen() {
     }
   }
 
-  function exportarExcel() {
-    Alert.alert('Exportar Excel', 'Función próximamente disponible')
+  async function exportarExcel() {
+    try {
+      const ahora = new Date()
+      const dia = ahora.getDate()
+      const mes = ahora.getMonth() + 1
+      const anio = ahora.getFullYear()
+
+      const grouped = new Map<string, { desc: string; pesos: number[] }>()
+      for (const r of registros) {
+        const key = r.referencia_codigo || r.material_id
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            desc: r.referencia_descripcion || key,
+            pesos: [],
+          })
+        }
+        grouped.get(key)!.pesos.push(r.peso_bruto - r.tara)
+      }
+
+      const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+      let xls = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<Styles>
+  <Style ss:ID="Default"/>
+  <Style ss:ID="hdr"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1F4E79" ss:Pattern="Solid"/><Alignment ss:Horizontal="Center"/></Style>
+  <Style ss:ID="num"><Alignment ss:Horizontal="Center"/><NumberFormat ss:Format="#,##0"/></Style>
+  <Style ss:ID="alt"><Interior ss:Color="#F5F8FC" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="altn"><Interior ss:Color="#F5F8FC" ss:Pattern="Solid"/><Alignment ss:Horizontal="Center"/><NumberFormat ss:Format="#,##0"/></Style>
+  <Style ss:ID="neto"><Font ss:Bold="1" ss:Color="#1F4E79"/><Alignment ss:Horizontal="Center"/><NumberFormat ss:Format="#,##0"/></Style>
+  <Style ss:ID="neta"><Font ss:Bold="1" ss:Color="#1F4E79"/><Alignment ss:Horizontal="Center"/><Interior ss:Color="#F5F8FC" ss:Pattern="Solid"/><NumberFormat ss:Format="#,##0"/></Style>
+  <Style ss:ID="tot"><Font ss:Bold="1" ss:Color="#FFFFFF" ss:Size="12"/><Interior ss:Color="#1F4E79" ss:Pattern="Solid"/></Style>
+  <Style ss:ID="totn"><Font ss:Bold="1" ss:Color="#FFFFFF" ss:Size="12"/><Interior ss:Color="#1F4E79" ss:Pattern="Solid"/><Alignment ss:Horizontal="Center"/><NumberFormat ss:Format="#,##0"/></Style>
+  <Style ss:ID="sign"><Font ss:Bold="1" ss:Color="#1F4E79"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Color="#999999"/></Borders></Style>
+</Styles>
+<Worksheet ss:Name="Inventario"><Table>`
+
+      const colW = [12, 30, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 12]
+      colW.forEach(w => { xls += `<Column ss:Width="${w * 6}"/>` })
+
+      const addCell = (v: string | number, s: string) => {
+        const t = typeof v === 'number' ? 'Number' : 'String'
+        xls += `<Cell ss:StyleID="${s}"><Data ss:Type="${t}">${t === 'Number' ? v : esc(v as string)}</Data></Cell>`
+      }
+
+      xls += `<Row>${['DÍA ' + dia, 'MES ' + mes, 'AÑO ' + anio].map(v => `<Cell ss:StyleID="hdr"><Data ss:Type="String">${esc(v)}</Data></Cell>`).join('')}<Cell ss:MergeAcross="4"><Data ss:Type="String">CONSECUTIVO</Data></Cell><Cell ss:MergeAcross="2"><Data ss:Type="String">No. 001</Data></Cell></Row>`
+      xls += `<Row><Cell ss:Index="4"><Data ss:Type="String">BODEGA _____________</Data></Cell></Row><Row/>`
+      xls += `<Row>${addCell('REALIZADO POR: ' + esc(sesion?.nombre_operador || ''), '')}<Cell ss:Index="7"><Data ss:Type="String">GRUPO No.</Data></Cell></Row>`
+      xls += `<Row><Cell><Data ss:Type="String">RESPONSABLE DEL ÁREA:</Data></Cell><Cell ss:Index="9"><Data ss:Type="String">ZONA:</Data></Cell></Row><Row/>`
+
+      const hdrs = ['CODIGO','MATERIALES',...Array.from({length:13},(_,i)=>'P'+(i+1)),'P NETO']
+      xls += `<Row>${hdrs.map(h => `<Cell ss:StyleID="hdr"><Data ss:Type="String">${esc(h)}</Data></Cell>`).join('')}</Row>`
+
+      let totalNeto = 0, rowIdx = 0
+      for (const [codigo, item] of grouped) {
+        for (let start = 0; start < item.pesos.length; start += 13) {
+          const alt = rowIdx % 2 === 1
+          xls += '<Row>'
+          xls += `<Cell${alt ? ' ss:StyleID="alt"' : ''}><Data ss:Type="String">${esc(codigo)}</Data></Cell>`
+          xls += `<Cell${alt ? ' ss:StyleID="alt"' : ''}><Data ss:Type="String">${esc(item.desc)}</Data></Cell>`
+          let rowSum = 0
+          for (let i = 0; i < 13; i++) {
+            const idx = start + i
+            if (idx < item.pesos.length) {
+              xls += `<Cell ss:StyleID="${alt ? 'altn' : 'num'}"><Data ss:Type="Number">${item.pesos[idx]}</Data></Cell>`
+              rowSum += item.pesos[idx]
+            } else {
+              xls += `<Cell ss:StyleID="${alt ? 'altn' : 'num'}"/>`
+            }
+          }
+          xls += `<Cell ss:StyleID="${alt ? 'neta' : 'neto'}"><Data ss:Type="Number">${rowSum}</Data></Cell>`
+          xls += '</Row>'
+          totalNeto += rowSum; rowIdx++
+        }
+      }
+
+      xls += '<Row/><Row>'
+      xls += '<Cell ss:StyleID="tot" ss:MergeAcross="14"><Data ss:Type="String">TOTAL RECIBIDO</Data></Cell>'
+      xls += `<Cell ss:StyleID="totn"><Data ss:Type="Number">${totalNeto}</Data></Cell>`
+      xls += '</Row><Row/><Row/>'
+
+      ;['ENTREGÓ:','ELABORÓ:','SISTEMATIZÓ:','CONTABILIZÓ:'].forEach(l => {
+        xls += `<Row><Cell ss:StyleID="sign"><Data ss:Type="String">${esc(l)}</Data></Cell></Row><Row/>`
+      })
+
+      xls += '</Table></Worksheet></Workbook>'
+
+      const file = new File(Paths.cache, `inventario_${anio}_${mes}_${dia}.xls`)
+      file.write(xls)
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(file.uri, { mimeType: 'application/vnd.ms-excel' })
+      } else {
+        Alert.alert('Excel generado', `Archivo guardado en: ${file.uri}`)
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'No se pudo generar el Excel')
+    }
   }
 
   function compartir() {
@@ -97,6 +233,18 @@ export default function ResumenScreen() {
 
     const texto = `📊 INVENTARIO CIA A.C.A\n${new Date().toLocaleDateString('es-MX')}\n\n${resumenTexto}\n\nTOTAL: ${total.toFixed(2)} kg`
     Alert.alert('Compartir', texto)
+  }
+
+  if (materialSeleccionado) {
+    return (
+      <DetalleMaterial
+        materialId={materialSeleccionado.material_id}
+        materialNombre={materialSeleccionado.material_nombre}
+        materialIcono={materialSeleccionado.material_icono}
+        registros={registros}
+        onCerrar={() => setMaterialSeleccionado(null)}
+      />
+    )
   }
 
   return (
@@ -110,7 +258,7 @@ export default function ResumenScreen() {
         </View>
 
         {resumen.map(r => (
-          <View key={r.material_id} style={styles.resumenRow}>
+          <TouchableOpacity key={r.material_id} style={styles.resumenRow} onPress={() => setMaterialSeleccionado(r)} activeOpacity={0.7}>
             <View style={styles.resumenLeft}>
               <Text style={styles.resumenIcon}>{r.material_icono}</Text>
               <View>
@@ -122,7 +270,7 @@ export default function ResumenScreen() {
               <Text style={styles.resumenPeso}>{r.total_neto.toFixed(2)} kg</Text>
               <Text style={styles.resumenPorc}>{r.porcentaje.toFixed(1)}% del total</Text>
             </View>
-          </View>
+          </TouchableOpacity>
         ))}
 
         {resumen.length === 0 && (
@@ -181,7 +329,7 @@ export default function ResumenScreen() {
               <View key={r.id} style={styles.printRow}>
                 <Text style={styles.printCellSmall}>{i + 1}</Text>
                 <Text style={styles.printCell}>{m?.nombre || r.material_id}</Text>
-                <Text style={styles.printCellSmall}>{r.peso_neto.toFixed(2)}</Text>
+                <Text style={styles.printCellSmall}>{(r.peso_bruto - r.tara).toFixed(2)}</Text>
               </View>
             )
           })}
@@ -230,7 +378,7 @@ function getResumen(registros: RegistroPesada[]): ResumenMaterial[] {
   const map = new Map<string, { total: number; count: number }>()
   for (const r of registros) {
     const current = map.get(r.material_id) || { total: 0, count: 0 }
-    current.total += r.peso_neto
+    current.total += r.peso_bruto - r.tara
     current.count++
     map.set(r.material_id, current)
   }

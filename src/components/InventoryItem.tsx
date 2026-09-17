@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
 import { RegistroPesada } from '../types'
 import { MATERIAL_MAP } from '../constants/materiales'
 import { COLORS, SIZES } from '../constants/theme'
+import { formatDescripcion } from '../utils/format'
 
 interface Props {
   item: RegistroPesada
@@ -26,11 +27,17 @@ export default function InventoryItem({ item, onEdit, onViewPhotos, onDelete }: 
           <View style={styles.iconWrap}>
             <Text style={styles.icon}>{material?.icono || '📦'}</Text>
           </View>
-          <View>
+          <View style={styles.textContent}>
             <Text style={styles.materialNombre}>{material?.nombre || item.material_id}</Text>
-            <Text style={styles.materialInfo}>
-              {material?.codigo} • {hora}
-            </Text>
+            {item.referencia_codigo ? (
+              <Text style={styles.refText} numberOfLines={1}>
+                {item.referencia_codigo} - {formatDescripcion(item.referencia_descripcion)}
+              </Text>
+            ) : null}
+            {item.codigo_barras ? (
+              <Text style={styles.barcodeText} numberOfLines={1}>📱 {item.codigo_barras}</Text>
+            ) : null}
+            <Text style={styles.materialInfo}>{hora}</Text>
           </View>
         </View>
         <View style={styles.right}>
@@ -96,6 +103,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flex: 1,
+  },
+  textContent: {
+    flex: 1,
+    flexShrink: 1,
   },
   iconWrap: {
     width: 40,
@@ -112,13 +124,29 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
+  refText: {
+    fontSize: 12,
+    color: COLORS.primary,
+    fontWeight: '600',
+    marginTop: 1,
+  },
   materialInfo: {
     fontSize: 12,
     color: COLORS.textLight,
-    marginTop: 2,
+    marginTop: 1,
+  },
+  barcodeText: {
+    fontSize: 11,
+    color: COLORS.primary,
+    fontWeight: '600',
+    marginTop: 1,
+    fontFamily: 'monospace',
+    letterSpacing: 0.5,
   },
   right: {
     alignItems: 'flex-end',
+    flexShrink: 0,
+    marginLeft: 8,
   },
   neto: {
     fontSize: 22,

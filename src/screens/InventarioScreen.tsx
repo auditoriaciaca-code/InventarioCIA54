@@ -1,29 +1,45 @@
 import { useState, useCallback } from 'react'
-import { View, Text, FlatList, TouchableOpacity, Alert, StyleSheet } from 'react-native'
+import { View, Text, FlatList, TouchableOpacity, Alert, Modal, TextInput, ScrollView, StyleSheet } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
-import { RegistroPesada } from '../types'
-import { MATERIAL_MAP } from '../constants/materiales'
+import { RegistroPesada, Foto, Referencia } from '../types'
+import { CATEGORIA_MAP, MATERIAL_MAP } from '../constants/materiales'
 import InventoryItem from '../components/InventoryItem'
+import PhotoViewer from '../components/PhotoViewer'
+import MaterialGrid from '../components/MaterialGrid'
+import ReferenciaSelector from '../components/ReferenciaSelector'
 import { getDatabase } from '../services/database'
 import { COLORS, SIZES } from '../constants/theme'
 import { sincronizar } from '../services/sync'
+import { useSesion } from '../context/SesionContext'
 
 export default function InventarioScreen() {
+  const { sesion } = useSesion()
   const [registros, setRegistros] = useState<RegistroPesada[]>([])
   const [filtro, setFiltro] = useState<string | null>(null)
+  const [busquedaPeso, setBusquedaPeso] = useState('')
   const [totalNeto, setTotalNeto] = useState(0)
+  const [fotosVisible, setFotosVisible] = useState(false)
+  const [fotosActuales, setFotosActuales] = useState<Foto[]>([])
+  const [editando, setEditando] = useState<RegistroPesada | null>(null)
+  const [editPesoBruto, setEditPesoBruto] = useState('')
+  const [editTara, setEditTara] = useState('')
+  const [editContenedor, setEditContenedor] = useState('')
+  const [editObservaciones, setEditObservaciones] = useState('')
+  const [editMaterialId, setEditMaterialId] = useState('')
+  const [editReferencia, setEditReferencia] = useState<Referencia | null>(null)
 
   useFocusEffect(
     useCallback(() => {
-      cargarRegistros()
-    }, [])
+      if (sesion) cargarRegistros()
+    }, [sesion])
   )
 
   async function cargarRegistros() {
     try {
       const db = getDatabase()
       const rows = await db.getAllAsync<RegistroPesada>(
-        'SELECT * FROM inv_registros ORDER BY created_at DESC'
+        'SELECT * FROM inv_registros WHERE sesion_id = ? ORDER BY created_at DESC',
+        [sesion?.id || '']
       )
       setRegistros(rows)
       const total = rows.reduce((sum, r) => sum + r.peso_neto, 0)
@@ -33,9 +49,15 @@ export default function InventarioScreen() {
     }
   }
 
-  const registrosFiltrados = filtro
-    ? registros.filter(r => r.material_id === filtro)
-    : registros
+  const registrosFiltrados = registros.filter(r => {
+    if (filtro && r.material_id !== filtro) return false
+    if (busquedaPeso.trim()) {
+      const num = busquedaPeso.trim().replace(',', '.')
+      const pesos = [r.peso_bruto, r.tara, r.peso_neto].map(p => p.toString())
+      if (!pesos.some(p => p.includes(num))) return false
+    }
+    return true
+  })
 
   const materialesUnicos = Array.from(new Set(registros.map(r => r.material_id)))
     .map(id => MATERIAL_MAP.get(id))
@@ -44,16 +66,53 @@ export default function InventarioScreen() {
   const totalFiltrado = registrosFiltrados.reduce((sum, r) => sum + r.peso_neto, 0)
 
   function handleEdit(id: string) {
-    Alert.alert('Editar', `Editar registro #${id.slice(0, 8)}`)
+    const reg = registros.find(r => r.id === id)
+    if (!reg) return
+    setEditando(reg)
+    setEditPesoBruto(reg.peso_bruto.toString())
+    setEditTara(reg.tara.toString())
+    setEditContenedor(reg.contenedor)
+    setEditObservaciones(reg.observaciones)
+    setEditMaterialId(reg.material_id)
+    setEditReferencia(reg.referencia_codigo ? { codigo: reg.referencia_codigo, descripcion: reg.referencia_descripcion } : null)
   }
 
-  function handleViewPhotos(id: string) {
+  async function handleSaveEdit() {
+    if (!editando) return
+    const pb = parseFloat(editPesoBruto)
+    const t = parseFloat(editTara)
+    if (isNaN(pb) || pb <= 0) { Alert.alert('Error', 'Peso bruto inválido'); return }
+    if (isNaN(t) || t < 0) { Alert.alert('Error', 'Tara inválida'); return }
+    try {
+      const db = getDatabase()
+      await db.runAsync(
+        'UPDATE inv_registros SET material_id = ?, referencia_codigo = ?, referencia_descripcion = ?, peso_bruto = ?, tara = ?, contenedor = ?, observaciones = ?, peso_neto = ?, synced = 0 WHERE id = ?',
+        [editMaterialId, editReferencia?.codigo || '', editReferencia?.descripcion || '', pb, t, editContenedor, editObservaciones, pb - t, editando.id]
+      )
+      setEditando(null)
+      cargarRegistros()
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'No se pudo guardar')
+    }
+  }
+
+  async function handleViewPhotos(id: string) {
     const reg = registros.find(r => r.id === id)
     if (!reg || reg.fotos_count === 0) {
       Alert.alert('Sin fotos', 'Este registro no tiene fotos')
       return
     }
-    Alert.alert('Fotos', `El registro #${id.slice(0, 8)} tiene ${reg.fotos_count} foto(s)`)
+    try {
+      const db = getDatabase()
+      const fotos = await db.getAllAsync<Foto>(
+        'SELECT * FROM inv_fotos WHERE registro_id = ? ORDER BY orden ASC',
+        [id]
+      )
+      setFotosActuales(fotos)
+      setFotosVisible(true)
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'No se pudieron cargar las fotos')
+    }
   }
 
   function handleDelete(id: string) {
@@ -151,6 +210,23 @@ export default function InventarioScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+
+            <View style={styles.searchRow}>
+              <Text style={styles.searchIcon}>🔍</Text>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Buscar por peso (kg)..."
+                placeholderTextColor={COLORS.textLight}
+                value={busquedaPeso}
+                onChangeText={setBusquedaPeso}
+                keyboardType="decimal-pad"
+              />
+              {busquedaPeso.length > 0 && (
+                <TouchableOpacity onPress={() => setBusquedaPeso('')} style={styles.searchClear}>
+                  <Text style={styles.searchClearText}>✕</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </>
         }
         ListEmptyComponent={
@@ -169,6 +245,61 @@ export default function InventarioScreen() {
           />
         )}
       />
+      <PhotoViewer
+        visible={fotosVisible}
+        fotos={fotosActuales}
+        onClose={() => setFotosVisible(false)}
+      />
+
+      <Modal visible={!!editando} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>✏️ Editar Registro</Text>
+
+            {editando && (
+              <ScrollView style={styles.modalScroll} keyboardShouldPersistTaps="handled">
+                <MaterialGrid seleccionado={editMaterialId} onSelect={setEditMaterialId} />
+                {editMaterialId && (
+                  <View style={styles.modalRefSection}>
+                    <ReferenciaSelector
+                      referencias={CATEGORIA_MAP.get(editMaterialId)?.referencias || []}
+                      seleccionada={editReferencia}
+                      onSelect={setEditReferencia}
+                    />
+                  </View>
+                )}
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Peso Bruto (kg) *</Text>
+                  <TextInput style={styles.input} value={editPesoBruto} onChangeText={setEditPesoBruto} keyboardType="decimal-pad" />
+                </View>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Tara (kg) *</Text>
+                  <TextInput style={styles.input} value={editTara} onChangeText={setEditTara} keyboardType="decimal-pad" />
+                </View>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Contenedor</Text>
+                  <TextInput style={styles.input} value={editContenedor} onChangeText={setEditContenedor} />
+                </View>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Observaciones</Text>
+                  <TextInput style={[styles.input, styles.textArea]} value={editObservaciones} onChangeText={setEditObservaciones} multiline numberOfLines={2} />
+                </View>
+
+                <View style={{ height: 20 }} />
+                <View style={styles.modalBtns}>
+                  <TouchableOpacity style={styles.saveBtn} onPress={handleSaveEdit} activeOpacity={0.8}>
+                    <Text style={styles.saveBtnText}>💾 Guardar Cambios</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditando(null)}>
+                    <Text style={styles.cancelBtnText}>Cancelar</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -248,8 +379,36 @@ const styles = StyleSheet.create({
   filterRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 15,
+    marginBottom: 8,
     flexWrap: 'wrap',
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+  },
+  searchIcon: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: COLORS.text,
+  },
+  searchClear: {
+    padding: 4,
+  },
+  searchClearText: {
+    fontSize: 16,
+    color: COLORS.textLight,
+    fontWeight: '600',
   },
   filterChip: {
     paddingHorizontal: 14,
@@ -293,5 +452,91 @@ const styles = StyleSheet.create({
   emptyText: {
     color: 'rgba(255,255,255,0.6)',
     fontSize: 13,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: SIZES.radiusLg,
+    padding: 25,
+    maxHeight: '90%',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  modalScroll: {
+    maxHeight: 500,
+  },
+  modalRefSection: {
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  modalInfo: {
+    marginBottom: 6,
+  },
+  modalLabel: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    fontWeight: '600',
+  },
+  modalValue: {
+    fontSize: 14,
+    color: COLORS.text,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  formGroup: {
+    marginBottom: 12,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: 5,
+  },
+  input: {
+    backgroundColor: COLORS.bg,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  textArea: {
+    minHeight: 60,
+    textAlignVertical: 'top',
+  },
+  modalBtns: {
+    marginTop: 15,
+    gap: 10,
+  },
+  saveBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: SIZES.radius,
+    padding: 14,
+    alignItems: 'center',
+  },
+  saveBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  cancelBtn: {
+    alignItems: 'center',
+    padding: 10,
+  },
+  cancelBtnText: {
+    color: COLORS.textLight,
+    fontWeight: '600',
+    fontSize: 14,
   },
 })
