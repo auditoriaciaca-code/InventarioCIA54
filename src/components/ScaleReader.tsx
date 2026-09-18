@@ -50,7 +50,7 @@ export default function ScaleReader({ onClose, onWeight }: Props) {
 
       const body = new FormData()
       body.append('file', { uri, type: 'image/jpeg', name: 'scale.jpg' } as any)
-      body.append('apikey', 'K81864006288957')
+      body.append('apikey', 'K87524179688957')
       body.append('language', 'eng')
       body.append('OCREngine', '2')
       body.append('scale', 'true')

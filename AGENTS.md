@@ -86,7 +86,7 @@ InventarioCIA54/
 ### 2. Lector de Báscula (ScaleReader)
 - Abre la **cámara del sistema** (ImagePicker.launchCameraAsync)
 - **Recorta** el centro 60% y **redimensiona** a 600px (expo-image-manipulator)
-- Envía la imagen a **OCR.space API** (clave: `K81864006288957`, 25k req/mes)
+- Envía la imagen a **OCR.space API** (clave: `K87524179688957`, 25k req/mes)
 - Parsea el texto extraído buscando dígitos de **1 a 4 caracteres** (0–9999)
 - Muestra el resultado para **confirmación/corrección manual**
 - Engine OCR: `2` (mejor para displays digitales)
@@ -255,7 +255,7 @@ Builds recientes:
 
 ## OCR.space API
 
-- **Key**: `K81864006288957`
+- **Key**: `K87524179688957`
 - **Límite**: 25,000 requests/mes
 - **Endpoint**: `https://api.ocr.space/parse/image`
 - **Engine**: `2` (optimizado para displays digitales)
