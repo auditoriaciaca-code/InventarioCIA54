@@ -13,7 +13,7 @@ import ReferenciaSelector from '../components/ReferenciaSelector'
 import QrScanner from '../components/QrScanner'
 import ScaleReader from '../components/ScaleReader'
 import { getDatabase } from '../services/database'
-import { subirEnSegundoPlano } from '../services/sync'
+import { subirEnSegundoPlano, subirFotosEnSegundoPlano } from '../services/sync'
 import { COLORS, SIZES } from '../constants/theme'
 import { CATEGORIA_MAP, CATEGORIAS } from '../constants/materiales'
 import { Referencia } from '../types'
@@ -130,12 +130,14 @@ export default function RegistroScreen() {
         [fila.id, fila.sesion_id, fila.area_id, fila.material_id, fila.referencia_codigo, fila.referencia_descripcion, fila.contenedor, fila.tara, fila.peso_bruto, fila.peso_neto, fila.observaciones, fila.codigo_barras, fila.fotos_count, fila.created_at, fila.created_by]
       )
 
-      for (let i = 0; i < fotosValidas.length; i++) {
+      const fotoRows = fotosValidas.map((f, i) => ({ id: randomUUID(), registro_id: id, path_local: f!.uri, orden: i }))
+      for (const f of fotoRows) {
         await db.runAsync(
           'INSERT INTO inv_fotos (id, registro_id, path_local, orden) VALUES (?, ?, ?, ?)',
-          [randomUUID(), id, fotosValidas[i]!.uri, i]
+          [f.id, f.registro_id, f.path_local, f.orden]
         )
       }
+      subirFotosEnSegundoPlano(fotoRows)
 
       subirEnSegundoPlano(fila)
 

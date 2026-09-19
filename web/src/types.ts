@@ -40,6 +40,13 @@ export interface Lote {
   pesado_at?: string | null
 }
 
+export interface Foto {
+  id: string
+  registro_id: string
+  url: string
+  orden: number
+}
+
 export interface Area {
   id: string
   nombre: string

@@ -1,0 +1,28 @@
+name: Supabase heartbeat
+
+# Supabase (plan free) pausa un proyecto tras 7 días sin actividad de
+# base de datos. Esta consulta diaria, mínima y de solo lectura, evita
+# que eso pase — ver conversación del 2026-09-17 sobre project pausing.
+on:
+  schedule:
+    - cron: '0 13 * * *' # todos los días ~8am hora Colombia
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consulta mínima a Supabase
+        run: |
+          http_code=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+            "https://lkrjzpxzxurzjoswpeku.supabase.co/rest/v1/inv_areas?select=id&limit=1" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+          echo "HTTP $http_code"
+          cat /tmp/response.json
+          if [ "$http_code" -ge 400 ]; then
+            echo "::error::Supabase respondió $http_code — revisar si el proyecto está pausado"
+            exit 1
+          fi
+        env:
+          SUPABASE_ANON_KEY: sb_publishable_6cWubKMz8T6lJqVE6HadnA_MX47WHQz

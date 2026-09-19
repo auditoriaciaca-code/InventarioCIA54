@@ -513,3 +513,84 @@ BEGIN
   RETURN NULL;
 END;
 $$;
+
+-- =====================================================================
+-- LOTES POR ÁREA  (2026-09)
+-- Reemplaza el tachado manual en papel/Excel: se carga desde la
+-- plataforma web (/web) la lista de lotes esperados por área, y cada vez
+-- que una pesada trae un lote_codigo que coincide con uno pendiente de
+-- esa misma área, queda marcado 'pesado' automáticamente. Un lote se
+-- pesa una sola vez (1 lote = 1 pesada); si el código escaneado no está
+-- en la lista, la pesada se guarda igual (el trigger simplemente no
+-- encuentra nada que marcar) — ver AGENTS.md sobre offline-first.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS inv_lotes (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  codigo      TEXT NOT NULL,
+  area_id     TEXT NOT NULL,
+  estado      TEXT NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente','pesado')),
+  registro_id TEXT REFERENCES inv_registros(id) ON DELETE SET NULL,
+  cargado_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  pesado_at   TIMESTAMPTZ,
+  UNIQUE (area_id, codigo)
+);
+
+CREATE INDEX IF NOT EXISTS idx_lotes_area_estado ON inv_lotes(area_id, estado);
+ALTER TABLE inv_lotes DISABLE ROW LEVEL SECURITY;
+
+ALTER TABLE inv_registros ADD COLUMN IF NOT EXISTS lote_codigo TEXT DEFAULT '';
+
+CREATE OR REPLACE FUNCTION fn_marcar_lote_pesado()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.lote_codigo IS NOT NULL AND NEW.lote_codigo <> '' THEN
+    UPDATE inv_lotes
+       SET estado = 'pesado', registro_id = NEW.id, pesado_at = NOW()
+     WHERE area_id = COALESCE(NEW.area_id, '')
+       AND codigo = NEW.lote_codigo
+       AND estado = 'pendiente';
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_marcar_lote_pesado ON inv_registros;
+CREATE TRIGGER trg_marcar_lote_pesado
+AFTER INSERT ON inv_registros
+FOR EACH ROW
+EXECUTE FUNCTION fn_marcar_lote_pesado();
+
+ALTER TABLE inv_lotes REPLICA IDENTITY FULL;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE inv_lotes;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- =====================================================================
+-- FOTOS EN SUPABASE STORAGE  (2026-09)
+-- Hasta ahora solo se sincronizaba el metadato de la foto (inv_fotos),
+-- nunca el archivo — por eso una foto solo se veía en el celular que la
+-- tomó. Se hace público el bucket (igual que el resto de la app, sin
+-- login todavía) y se agregan las políticas mínimas para que la app
+-- (con la anon key) pueda subir y leer archivos.
+-- =====================================================================
+UPDATE storage.buckets SET public = true WHERE id = 'inv_fotos';
+
+DROP POLICY IF EXISTS "inv_fotos_anon_insert" ON storage.objects;
+CREATE POLICY "inv_fotos_anon_insert" ON storage.objects
+FOR INSERT TO anon
+WITH CHECK (bucket_id = 'inv_fotos');
+
+DROP POLICY IF EXISTS "inv_fotos_anon_select" ON storage.objects;
+CREATE POLICY "inv_fotos_anon_select" ON storage.objects
+FOR SELECT TO anon
+USING (bucket_id = 'inv_fotos');
+
+DROP POLICY IF EXISTS "inv_fotos_anon_update" ON storage.objects;
+CREATE POLICY "inv_fotos_anon_update" ON storage.objects
+FOR UPDATE TO anon
+USING (bucket_id = 'inv_fotos')
+WITH CHECK (bucket_id = 'inv_fotos');

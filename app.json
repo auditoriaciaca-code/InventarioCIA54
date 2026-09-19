@@ -36,6 +36,12 @@
         "projectId": "3b00fee1-2732-43d7-9360-80f8235c999e"
       }
     },
-    "owner": "ajr01s-team"
+    "owner": "ajr01s-team",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/3b00fee1-2732-43d7-9360-80f8235c999e"
+    }
   }
 }

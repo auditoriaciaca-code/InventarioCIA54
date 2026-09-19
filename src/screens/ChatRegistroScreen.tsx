@@ -18,7 +18,7 @@ import ComparacionTabla from '../components/ComparacionTabla'
 import QrScanner from '../components/QrScanner'
 import LoteAutocomplete from '../components/LoteAutocomplete'
 import { getDatabase } from '../services/database'
-import { subirEnSegundoPlano, sincronizarLotes } from '../services/sync'
+import { subirEnSegundoPlano, sincronizarLotes, subirFotosEnSegundoPlano } from '../services/sync'
 import { COLORS, SIZES } from '../constants/theme'
 import { CATEGORIA_MAP, MATERIAL_MAP } from '../constants/materiales'
 import { parseMensaje } from '../utils/chatParser'
@@ -349,12 +349,14 @@ export default function ChatRegistroScreen() {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [fila.id, fila.sesion_id, fila.area_id, fila.material_id, fila.referencia_codigo, fila.referencia_descripcion, fila.contenedor, fila.tara, fila.peso_bruto, fila.peso_neto, fila.observaciones, fila.codigo_barras, fila.lote_codigo, fila.fotos_count, fila.created_at, fila.created_by]
     )
-    for (let i = 0; i < fotos.length; i++) {
+    const fotoRows = fotos.map((uri, i) => ({ id: randomUUID(), registro_id: id, path_local: uri, orden: i }))
+    for (const f of fotoRows) {
       await db.runAsync(
         'INSERT INTO inv_fotos (id, registro_id, path_local, orden) VALUES (?, ?, ?, ?)',
-        [randomUUID(), id, fotos[i], i]
+        [f.id, f.registro_id, f.path_local, f.orden]
       )
     }
+    subirFotosEnSegundoPlano(fotoRows)
 
     if (loteCodigo) {
       await db.runAsync(

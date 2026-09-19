@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { File } from 'expo-file-system'
 import { Comparacion } from '../types'
 
 const supabaseUrl = 'https://lkrjzpxzxurzjoswpeku.supabase.co'
@@ -16,6 +17,31 @@ export async function syncFotos(fotos: any[]): Promise<void> {
   if (fotos.length === 0) return
   const { error } = await supabase.from('inv_fotos').upsert(fotos)
   if (error) throw error
+}
+
+/**
+ * Sube el archivo de la foto (no solo su metadato) al bucket de Storage,
+ * para que sea visible desde cualquier celular o desde la plataforma web
+ * — antes solo se guardaba `path_local`, que no sirve fuera del celular
+ * que tomó la foto. Devuelve la URL pública o null si falló (sin señal,
+ * best-effort, nunca lanza).
+ */
+export async function subirFotoStorage(fotoId: string, pathLocal: string): Promise<string | null> {
+  try {
+    const ext = pathLocal.split('.').pop()?.toLowerCase() || 'jpg'
+    const storagePath = `${fotoId}.${ext}`
+    // fetch(uri).arrayBuffer() no es confiable con URIs file:// en Android;
+    // expo-file-system sí lee el archivo local de forma directa y robusta.
+    const bytes = await new File(pathLocal).bytes()
+    const { error } = await supabase.storage
+      .from('inv_fotos')
+      .upload(storagePath, bytes, { contentType: 'image/jpeg', upsert: true })
+    if (error) return null
+    const { data } = supabase.storage.from('inv_fotos').getPublicUrl(storagePath)
+    return data.publicUrl
+  } catch {
+    return null
+  }
 }
 
 const TIMEOUT_SUBIDA_MS = 6000

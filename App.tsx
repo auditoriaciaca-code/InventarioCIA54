@@ -98,7 +98,12 @@ export default function App() {
             component={InventarioScreen}
             options={{
               tabBarIcon: ({ color }) => <Text style={{ fontSize: 22 }}>📋</Text>,
-              headerTitle: 'Inventario',
+              headerTitle: () => (
+                <View style={styles.headerTitleRow}>
+                  <Image source={require('./assets/images/logo-icono.png')} style={styles.headerLogo} />
+                  <Text style={styles.headerTitleText}>Inventario</Text>
+                </View>
+              ),
             }}
           />
           <Tab.Screen
@@ -106,7 +111,12 @@ export default function App() {
             component={ResumenScreen}
             options={{
               tabBarIcon: ({ color }) => <Text style={{ fontSize: 22 }}>📊</Text>,
-              headerTitle: 'Resumen',
+              headerTitle: () => (
+                <View style={styles.headerTitleRow}>
+                  <Image source={require('./assets/images/logo-icono.png')} style={styles.headerLogo} />
+                  <Text style={styles.headerTitleText}>Resumen</Text>
+                </View>
+              ),
             }}
           />
           <Tab.Screen
@@ -115,7 +125,12 @@ export default function App() {
             options={{
               tabBarIcon: ({ color }) => <Text style={{ fontSize: 22 }}>💬</Text>,
               tabBarLabel: 'Rápido',
-              headerTitle: 'Registro Rápido',
+              headerTitle: () => (
+                <View style={styles.headerTitleRow}>
+                  <Image source={require('./assets/images/logo-icono.png')} style={styles.headerLogo} />
+                  <Text style={styles.headerTitleText}>Registro Rápido</Text>
+                </View>
+              ),
             }}
           />
         </Tab.Navigator>
@@ -139,9 +154,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   headerLogo: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
   },
   headerTitleText: {
     color: '#fff',
