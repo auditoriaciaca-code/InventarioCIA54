@@ -11,11 +11,10 @@ export default function App() {
       <div className="app">
         <header className="topbar">
           <div className="brand">
-            <span className="brand-icon">⚖️</span>
-            <div>
-              <h1>CIA A.C.A</h1>
-              <span className="subtitle">Inventario · Pesadas</span>
+            <div className="brand-logo-badge">
+              <img src="./logo-horizontal.png" alt="C.I. ACA — Aluminios, Cobres y Aceros SAS" className="brand-logo" />
             </div>
+            <span className="subtitle">Inventario · Pesadas</span>
           </div>
           <nav className="tabs">
             <NavLink to="/" end className={({ isActive }) => (isActive ? 'tab active' : 'tab')}>

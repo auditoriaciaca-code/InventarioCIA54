@@ -1,5 +1,15 @@
 import { getDatabase } from './database'
-import { syncRegistros, syncFotos, subirRegistroInmediato, obtenerLotesPorArea, subirFotoStorage } from './supabase'
+import {
+  syncRegistros,
+  syncFotos,
+  subirRegistroInmediato,
+  obtenerLotesPorArea,
+  subirFotoStorage,
+  obtenerAreas,
+  obtenerCierresHoy,
+} from './supabase'
+import { hoyLocalISO } from '../utils/fechas'
+import { actualizarAreas } from '../constants/areas'
 
 /**
  * Dispara la subida de un registro recién guardado en segundo plano
@@ -60,6 +70,83 @@ export async function sincronizarLotes(areaId: string): Promise<void> {
       )
     }
   } catch {}
+}
+
+/**
+ * Refresca la copia local del catálogo de áreas (fuente de verdad:
+ * Supabase). Si falla, deja la copia local (las 5 de siempre, o lo último
+ * sincronizado) tal como estaba — nunca deja el lobby sin áreas por un
+ * corte de señal.
+ */
+export async function sincronizarAreas(): Promise<void> {
+  const areas = await obtenerAreas()
+  if (areas === null || areas.length === 0) return
+  try {
+    const db = getDatabase()
+    for (const a of areas) {
+      await db.runAsync(
+        `INSERT INTO inv_areas_cache (id, nombre, icono, orden) VALUES (?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre, icono = excluded.icono, orden = excluded.orden`,
+        [a.id, a.nombre, a.icono, a.orden]
+      )
+    }
+    actualizarAreas(areas)
+  } catch {}
+}
+
+/**
+ * Carga el catálogo de áreas guardado en SQLite (lo último sincronizado)
+ * hacia la memoria — se llama al arrancar la app, antes de que la
+ * sincronización por red termine, para que el lobby no muestre solo las 5
+ * semillas si ya se habían sincronizado más áreas en una sesión anterior.
+ */
+export async function cargarAreasLocal(): Promise<void> {
+  try {
+    const db = getDatabase()
+    const areas = await db.getAllAsync<any>('SELECT * FROM inv_areas_cache ORDER BY orden ASC')
+    actualizarAreas(areas)
+  } catch {}
+}
+
+/**
+ * Refresca la copia local de qué áreas están finalizadas HOY, para que el
+ * lobby y el bloqueo de registro funcionen igual con o sin señal.
+ */
+export async function sincronizarCierresHoy(): Promise<void> {
+  const mapa = await obtenerCierresHoy()
+  try {
+    const db = getDatabase()
+    const hoy = hoyLocalISO()
+    await db.runAsync('DELETE FROM inv_cierres_cache WHERE fecha = ?', [hoy])
+    for (const areaId of Object.keys(mapa)) {
+      const c = mapa[areaId]
+      await db.runAsync(
+        'INSERT INTO inv_cierres_cache (area_id, fecha, cerrado, cerrado_por, cerrado_at) VALUES (?, ?, ?, ?, ?)',
+        [areaId, hoy, c.cerrado ? 1 : 0, c.cerrado_por || '', c.cerrado_at || '']
+      )
+    }
+  } catch {}
+}
+
+/**
+ * Consulta local (offline-first) si un área ya fue finalizada hoy, para
+ * bloquear el guardado/edición de pesadas. Se apoya en la copia sincronizada
+ * por sincronizarCierresHoy() — si nunca sincronizó, asume que no está
+ * cerrada (no debe bloquear por falta de señal).
+ */
+export async function estaAreaCerradaHoy(areaId: string): Promise<boolean> {
+  if (!areaId) return false
+  try {
+    const db = getDatabase()
+    const hoy = hoyLocalISO()
+    const row = await db.getFirstAsync<{ cerrado: number }>(
+      'SELECT cerrado FROM inv_cierres_cache WHERE area_id = ? AND fecha = ?',
+      [areaId, hoy]
+    )
+    return !!row && row.cerrado === 1
+  } catch {
+    return false
+  }
 }
 
 export async function sincronizar(): Promise<{ ok: boolean; mensaje: string }> {

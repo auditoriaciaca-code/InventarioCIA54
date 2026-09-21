@@ -6,44 +6,61 @@ import {
 import { Sesion } from '../types'
 import { COLORS, SIZES } from '../constants/theme'
 import { useSesion } from '../context/SesionContext'
-import { AREAS, nombreArea } from '../constants/areas'
-import { obtenerOperadoresHoyPorArea } from '../services/supabase'
+import { AREAS, AREA_MAP, nombreArea } from '../constants/areas'
+import {
+  obtenerOperadoresHoyPorArea,
+  obtenerCierresHoy,
+  crearAreaRemota,
+  reabrirInventarioRemoto,
+  obtenerClaveSupervisorHash,
+  guardarClaveSupervisorHash,
+} from '../services/supabase'
+import { sincronizarAreas } from '../services/sync'
+import { sha256, slugify } from '../utils/hash'
+import { hoyLocalISO } from '../utils/fechas'
+import HistorialAreaModal from './HistorialAreaModal'
 
 const MAX_OPERADORES_POR_AREA = 2
 const REFRESH_MS = 15000
+const ICONOS_AREA_NUEVA = ['🏗️', '🚛', '📦', '🔧', '⚙️', '🏬', '🧱', '🛠️']
 
 export default function SesionSelector() {
   const { sesion, sesiones, mostrarSelector, ocultarSelector, crearSesion, seleccionarSesion, salirSesion } = useSesion()
-  const [areaId, setAreaId] = useState<string | null>(null)
-  const [nombreNuevo, setNombreNuevo] = useState('')
-  const [mostrandoNuevo, setMostrandoNuevo] = useState(false)
-  const [procesando, setProcesando] = useState(false)
-  const [saliendo, setSaliendo] = useState(false)
+
   const [operadoresPorArea, setOperadoresPorArea] = useState<Record<string, string[]>>({})
-  const [mostrarHistorial, setMostrarHistorial] = useState(false)
+  const [cierresHoy, setCierresHoy] = useState<Record<string, any>>({})
+  const [saliendo, setSaliendo] = useState(false)
+  const [procesando, setProcesando] = useState(false)
+
+  const [areaExpandidaId, setAreaExpandidaId] = useState<string | null>(null)
+  const [nombreNuevo, setNombreNuevo] = useState('')
+
+  const [creandoAreaAbierto, setCreandoAreaAbierto] = useState(false)
+  const [nombreAreaNueva, setNombreAreaNueva] = useState('')
+  const [iconoAreaNueva, setIconoAreaNueva] = useState(ICONOS_AREA_NUEVA[0])
+  const [creandoAreaProcesando, setCreandoAreaProcesando] = useState(false)
+
+  const [pinReabrir, setPinReabrir] = useState('')
+  const [reabriendo, setReabriendo] = useState(false)
+
+  const [historialAreaId, setHistorialAreaId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!mostrarSelector) return
-    // Si ya trabajas en un área, entra directo a "quién está aquí" de esa
-    // área; si no, primero hay que elegir una.
-    setAreaId(sesion?.area_id || null)
-    setMostrandoNuevo(false)
-    setNombreNuevo('')
-    setMostrarHistorial(false)
+    setAreaExpandidaId(null)
+    setCreandoAreaAbierto(false)
 
     async function actualizar() {
       setOperadoresPorArea(await obtenerOperadoresHoyPorArea())
+      setCierresHoy(await obtenerCierresHoy())
     }
     actualizar()
+    sincronizarAreas()
     const intervalo = setInterval(actualizar, REFRESH_MS)
     return () => clearInterval(intervalo)
   }, [mostrarSelector])
 
-  const area = areaId ? AREAS.find(a => a.id === areaId) || null : null
-  const ocupantes = areaId ? (operadoresPorArea[areaId] || []) : []
-  const hayCupo = ocupantes.length < MAX_OPERADORES_POR_AREA
-
-  function esMio(nombreOperador: string): boolean {
+  function esMio(areaId: string, nombreOperador: string): boolean {
     return sesiones.some(
       s => s.area_id === areaId && s.nombre_operador.toLowerCase() === nombreOperador.toLowerCase()
     )
@@ -72,26 +89,27 @@ export default function SesionSelector() {
             setSaliendo(false)
             if (!ok) {
               Alert.alert('Sin conexión', 'No se pudo salir. Revisa tu internet e intenta de nuevo.')
-              return
             }
-            setAreaId(null)
           },
         },
       ]
     )
   }
 
-  function abrirNuevoOperador() {
-    // Ancla el nombre de quien ya usa este celular (sesión activa, o si no,
-    // la más reciente en el historial) para no tener que volver a
-    // escribirlo cada vez que cambia de área.
+  function toggleExpand(areaId: string) {
+    if (areaExpandidaId === areaId) {
+      setAreaExpandidaId(null)
+      return
+    }
+    setAreaExpandidaId(areaId)
+    setCreandoAreaAbierto(false)
+    setPinReabrir('')
     const sugerido = sesion?.nombre_operador || sesiones[0]?.nombre_operador || ''
     setNombreNuevo(sugerido)
-    setMostrandoNuevo(true)
   }
 
-  async function handleContinuar(nombreOperador: string) {
-    if (!areaId || procesando) return
+  async function handleContinuar(areaId: string, nombreOperador: string) {
+    if (procesando) return
     setProcesando(true)
     try {
       const local = sesiones.find(
@@ -103,6 +121,7 @@ export default function SesionSelector() {
         await crearSesion(nombreOperador, areaId)
       }
       ocultarSelector()
+      setAreaExpandidaId(null)
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'No se pudo entrar a la sala')
     } finally {
@@ -110,26 +129,24 @@ export default function SesionSelector() {
     }
   }
 
-  async function handleCrearNuevo() {
-    if (!nombreNuevo.trim() || !areaId || procesando) return
+  async function handleUnirse(areaId: string) {
+    const nombre = nombreNuevo.trim()
+    if (!nombre || procesando) return
     setProcesando(true)
     try {
       const frescos = await obtenerOperadoresHoyPorArea()
       setOperadoresPorArea(frescos)
       const ocupantesFrescos = frescos[areaId] || []
-      const yaEstaDentro = ocupantesFrescos.some(o => o.toLowerCase() === nombreNuevo.trim().toLowerCase())
+      const yaEstaDentro = ocupantesFrescos.some(o => o.toLowerCase() === nombre.toLowerCase())
       if (ocupantesFrescos.length >= MAX_OPERADORES_POR_AREA && !yaEstaDentro) {
-        setProcesando(false)
         Alert.alert(
           'Sala llena',
           `${nombreArea(areaId)} ya tiene ${ocupantesFrescos.length} operadores hoy: ${ocupantesFrescos.join(', ')}.`
         )
         return
       }
-      const nombre = nombreNuevo.trim()
       setNombreNuevo('')
-      setMostrandoNuevo(false)
-      await handleContinuar(nombre)
+      await handleContinuar(areaId, nombre)
     } finally {
       setProcesando(false)
     }
@@ -139,6 +156,86 @@ export default function SesionSelector() {
     await seleccionarSesion(s)
     ocultarSelector()
   }
+
+  async function handleCrearArea() {
+    const nombre = nombreAreaNueva.trim()
+    if (!nombre || creandoAreaProcesando) return
+    setCreandoAreaProcesando(true)
+    try {
+      const id = slugify(nombre)
+      if (!id) {
+        Alert.alert('Nombre inválido', 'Escribe un nombre válido para el área.')
+        return
+      }
+      if (AREA_MAP.get(id)) {
+        Alert.alert('Ya existe', 'Ya hay un área con ese nombre.')
+        return
+      }
+      const orden = AREAS.length + 1
+      const ok = await crearAreaRemota({ id, nombre, icono: iconoAreaNueva, orden })
+      if (!ok) {
+        Alert.alert('Sin conexión', 'No se pudo crear el área. Intenta de nuevo.')
+        return
+      }
+      await sincronizarAreas()
+      setNombreAreaNueva('')
+      setCreandoAreaAbierto(false)
+    } finally {
+      setCreandoAreaProcesando(false)
+    }
+  }
+
+  async function confirmarReapertura(areaId: string) {
+    const ok = await reabrirInventarioRemoto(areaId, hoyLocalISO(), sesion?.nombre_operador || 'supervisor')
+    if (!ok) {
+      Alert.alert('Sin conexión', 'No se pudo reabrir. Intenta de nuevo.')
+      return
+    }
+    setPinReabrir('')
+    setAreaExpandidaId(null)
+    setCierresHoy(await obtenerCierresHoy())
+  }
+
+  async function handleReabrir(areaId: string) {
+    const pin = pinReabrir.trim()
+    if (!pin || reabriendo) return
+    setReabriendo(true)
+    try {
+      const hashGuardado = await obtenerClaveSupervisorHash()
+      if (hashGuardado === null) {
+        Alert.alert('Sin conexión', 'No se pudo validar la clave. Intenta de nuevo.')
+        return
+      }
+      const hashIngresado = await sha256(pin)
+      if (hashGuardado === '') {
+        Alert.alert(
+          'Configurar clave de supervisor',
+          'Todavía no hay ninguna clave configurada. ¿Quieres usar la que acabas de escribir como la clave del supervisor de ahora en adelante?',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            {
+              text: 'Sí, usarla',
+              onPress: async () => {
+                const guardada = await guardarClaveSupervisorHash(hashIngresado)
+                if (guardada) await confirmarReapertura(areaId)
+                else Alert.alert('Error', 'No se pudo guardar la clave. Intenta de nuevo.')
+              },
+            },
+          ]
+        )
+        return
+      }
+      if (hashIngresado !== hashGuardado) {
+        Alert.alert('Clave incorrecta', 'La clave no coincide.')
+        return
+      }
+      await confirmarReapertura(areaId)
+    } finally {
+      setReabriendo(false)
+    }
+  }
+
+  const recientes = sesiones.slice(0, 6)
 
   return (
     <Modal visible={mostrarSelector} animationType="slide" transparent>
@@ -150,139 +247,246 @@ export default function SesionSelector() {
             </TouchableOpacity>
           )}
 
+          <Text style={styles.title}>Elige tu sala de trabajo</Text>
+          <Text style={styles.subtitle}>{AREAS.length} áreas · toca una sala con cupo para entrar</Text>
+
           {sesion && (
-            <TouchableOpacity style={styles.salirLink} onPress={handleSalir} disabled={saliendo}>
-              <Text style={styles.salirLinkText}>
-                🚪 {saliendo ? 'Saliendo...' : `Salir de mi sesión (${sesion.nombre_operador} · ${nombreArea(sesion.area_id)})`}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.opTag}>
+              <View style={styles.opAvatar}>
+                <Text style={styles.opAvatarText}>
+                  {sesion.nombre_operador.slice(0, 2).toUpperCase()}
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.opName}>{sesion.nombre_operador}</Text>
+                <Text style={styles.opRole}>
+                  <Text style={styles.opLiveDot}>●</Text> Ahora en {nombreArea(sesion.area_id)}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={handleSalir} disabled={saliendo}>
+                <Text style={styles.salirLinkText}>{saliendo ? 'Saliendo…' : '🚪 Salir'}</Text>
+              </TouchableOpacity>
+            </View>
           )}
 
-          {!area ? (
-            <>
-              <Text style={styles.title}>Inventario CIA A.C.A</Text>
-              <Text style={styles.subtitle}>Elige tu área de trabajo</Text>
+          <ScrollView style={styles.salasScroll} contentContainerStyle={styles.salasContent}>
+            {AREAS.map(area => {
+              const ocupantes = operadoresPorArea[area.id] || []
+              const cierre = cierresHoy[area.id]
+              const cerrada = !!cierre?.cerrado
+              const hayCupo = ocupantes.length < MAX_OPERADORES_POR_AREA
+              const expandida = areaExpandidaId === area.id
 
-              <ScrollView contentContainerStyle={styles.areaGrid}>
-                {AREAS.map(a => {
-                  const ocupantesArea = operadoresPorArea[a.id] || []
-                  return (
-                    <TouchableOpacity key={a.id} style={styles.areaCard} onPress={() => setAreaId(a.id)} activeOpacity={0.8}>
-                      <Text style={styles.areaCardIcon}>{a.icono}</Text>
-                      <Text style={styles.areaCardNombre}>{a.nombre}</Text>
-                      <Text style={styles.areaCardEstado} numberOfLines={1}>
-                        {ocupantesArea.length === 0 ? 'Sin operadores hoy' : ocupantesArea.join(' · ')}
-                      </Text>
+              let pillEstilo = styles.pillOk
+              let pillTexto = `0/${MAX_OPERADORES_POR_AREA} libre`
+              if (cerrada) {
+                pillEstilo = styles.pillLocked
+                pillTexto = 'FINALIZADO'
+              } else if (ocupantes.length >= MAX_OPERADORES_POR_AREA) {
+                pillEstilo = styles.pillDanger
+                pillTexto = `${ocupantes.length}/${MAX_OPERADORES_POR_AREA} LLENA`
+              } else if (ocupantes.length > 0) {
+                pillEstilo = styles.pillWarn
+                pillTexto = `${ocupantes.length}/${MAX_OPERADORES_POR_AREA} · cupo`
+              }
+
+              return (
+                <View key={area.id} style={styles.room}>
+                  <View style={styles.roomRowOuter}>
+                    <TouchableOpacity
+                      style={styles.roomRowMain}
+                      onPress={() => toggleExpand(area.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.roomIcon, cerrada && styles.roomIconLocked]}>
+                        <Text style={styles.roomIconText}>{cerrada ? '🔒' : area.icono}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[styles.roomName, cerrada && styles.roomNameLocked]}>{area.nombre}</Text>
+                        <Text style={styles.roomOcupantes} numberOfLines={1}>
+                          {cerrada
+                            ? `Finalizado hoy${cierre?.cerrado_por ? ' · por ' + cierre.cerrado_por : ''}`
+                            : ocupantes.length === 0
+                            ? 'Sin operadores hoy'
+                            : ocupantes.join(' · ')}
+                        </Text>
+                      </View>
                     </TouchableOpacity>
-                  )
-                })}
-              </ScrollView>
-
-              <TouchableOpacity onPress={() => setMostrarHistorial(v => !v)}>
-                <Text style={styles.historialLink}>
-                  {mostrarHistorial ? '▲ Ocultar historial de sesiones' : '▼ Ver historial de sesiones'}
-                </Text>
-              </TouchableOpacity>
-
-              {mostrarHistorial && (
-                <FlatList
-                  data={sesiones}
-                  keyExtractor={item => item.id}
-                  style={styles.list}
-                  contentContainerStyle={styles.listContent}
-                  ListEmptyComponent={<Text style={styles.emptyText}>Sin sesiones previas</Text>}
-                  renderItem={({ item }) => {
-                    const fecha = new Date(item.created_at).toLocaleDateString('es-MX', {
-                      day: '2-digit', month: '2-digit', year: 'numeric',
-                      hour: '2-digit', minute: '2-digit',
-                    })
-                    return (
+                    <View style={styles.roomSide}>
                       <TouchableOpacity
-                        style={[styles.sessionItem, item.activa === 1 && styles.sessionActiva]}
-                        onPress={() => handleSeleccionarHistorial(item)}
+                        style={styles.histBtn}
+                        onPress={() => setHistorialAreaId(area.id)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <View style={styles.sessionLeft}>
-                          <Text style={styles.sessionIcon}>{item.activa === 1 ? '🟢' : '🔵'}</Text>
-                          <View>
-                            <Text style={styles.sessionName}>{item.nombre_operador}</Text>
-                            <Text style={styles.sessionDate}>{nombreArea(item.area_id)} · {fecha}</Text>
-                          </View>
-                        </View>
-                        <View style={styles.sessionRight}>
-                          <Text style={styles.sessionCount}>{item.total_registros ?? 0} reg</Text>
-                          <Text style={styles.sessionTotal}>{(item.total_neto ?? 0).toFixed(1)} kg</Text>
-                        </View>
+                        <Text style={styles.histBtnText}>📜</Text>
                       </TouchableOpacity>
-                    )
-                  }}
-                />
-              )}
-            </>
-          ) : (
-            <>
-              <TouchableOpacity onPress={() => setAreaId(null)} style={styles.backRow}>
-                <Text style={styles.backText}>← Cambiar de área</Text>
+                      <View style={[styles.pill, pillEstilo]}>
+                        <Text style={styles.pillText}>{pillTexto}</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {expandida && cerrada && (
+                    <View style={styles.roomExpand}>
+                      <Text style={styles.lockedNote}>
+                        Nadie puede registrar ni modificar pesadas aquí hasta reabrirlo. Solo el
+                        supervisor puede reabrir, con clave.
+                      </Text>
+                      <View style={styles.pinRow}>
+                        <TextInput
+                          style={styles.pinInput}
+                          placeholder="Clave"
+                          placeholderTextColor={COLORS.textLight}
+                          secureTextEntry
+                          value={pinReabrir}
+                          onChangeText={setPinReabrir}
+                          autoFocus
+                        />
+                        <TouchableOpacity
+                          style={styles.reopenBtn}
+                          onPress={() => handleReabrir(area.id)}
+                          disabled={!pinReabrir.trim() || reabriendo}
+                        >
+                          <Text style={styles.reopenBtnText}>{reabriendo ? '...' : '🔓 Reabrir'}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+
+                  {expandida && !cerrada && (
+                    <View style={styles.roomExpand}>
+                      {ocupantes.map(op => {
+                        const mio = esMio(area.id, op)
+                        return (
+                          <TouchableOpacity
+                            key={op}
+                            style={[styles.whoRow, !mio && styles.whoRowLocked]}
+                            onPress={() => (mio ? handleContinuar(area.id, op) : handleBloqueado(op))}
+                            disabled={procesando}
+                          >
+                            <Text style={styles.whoName}>{mio ? '👤' : '🔒'} {op}</Text>
+                            <Text style={styles.whoHint}>
+                              {mio ? 'Continuar →' : 'en otro celular'}
+                            </Text>
+                          </TouchableOpacity>
+                        )
+                      })}
+
+                      {hayCupo && (
+                        <View style={styles.newOpRow}>
+                          <TextInput
+                            style={styles.newOpInput}
+                            placeholder="Escribe tu nombre para entrar…"
+                            placeholderTextColor={COLORS.textLight}
+                            value={nombreNuevo}
+                            onChangeText={setNombreNuevo}
+                          />
+                          <TouchableOpacity
+                            style={styles.joinBtn}
+                            onPress={() => handleUnirse(area.id)}
+                            disabled={!nombreNuevo.trim() || procesando}
+                          >
+                            <Text style={styles.joinBtnText}>{procesando ? '...' : 'Entrar →'}</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+
+                      {!hayCupo && (
+                        <Text style={styles.llenoText}>
+                          🔒 Esta sala ya tiene {MAX_OPERADORES_POR_AREA} operadores hoy.
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                </View>
+              )
+            })}
+
+            {/* Crear nueva área */}
+            <View style={[styles.room, styles.roomNueva]}>
+              <TouchableOpacity
+                style={styles.roomRowOuter}
+                onPress={() => {
+                  setCreandoAreaAbierto(v => !v)
+                  setAreaExpandidaId(null)
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.roomRowMain}>
+                  <View style={[styles.roomIcon, styles.roomIconNueva]}>
+                    <Text style={styles.roomIconText}>➕</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.roomNameNueva}>Crear nueva área</Text>
+                    <Text style={styles.roomOcupantes}>Se agrega para siempre a esta lista</Text>
+                  </View>
+                </View>
               </TouchableOpacity>
-              <Text style={styles.title}>{area.icono} {area.nombre}</Text>
-              <Text style={styles.subtitle}>
-                {ocupantes.length === 0 ? 'Nadie ha registrado aquí hoy' : '¿Quién eres?'}
-              </Text>
 
-              {ocupantes.map(op => {
-                const mio = esMio(op)
-                return (
-                  <TouchableOpacity
-                    key={op}
-                    style={[styles.operadorBtn, !mio && styles.operadorBtnBloqueado]}
-                    onPress={() => (mio ? handleContinuar(op) : handleBloqueado(op))}
-                    disabled={procesando}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.operadorBtnText, !mio && styles.operadorBtnTextBloqueado]}>
-                      {mio ? '👤' : '🔒'} {op}
-                    </Text>
-                    <Text style={styles.operadorBtnHint}>
-                      {mio ? 'Continuar pesando →' : 'activo en otro celular'}
-                    </Text>
-                  </TouchableOpacity>
-                )
-              })}
-
-              {hayCupo && !mostrandoNuevo && (
-                <TouchableOpacity style={styles.nuevoBtn} onPress={abrirNuevoOperador} activeOpacity={0.8}>
-                  <Text style={styles.nuevoBtnText}>+ Nuevo operador</Text>
-                </TouchableOpacity>
-              )}
-
-              {hayCupo && mostrandoNuevo && (
-                <View style={styles.inputRow}>
+              {creandoAreaAbierto && (
+                <View style={styles.roomExpand}>
                   <TextInput
-                    style={styles.input}
-                    placeholder="Tu nombre"
+                    style={styles.newAreaInput}
+                    placeholder="Nombre del área (ej. Bodega Este)"
                     placeholderTextColor={COLORS.textLight}
-                    value={nombreNuevo}
-                    onChangeText={setNombreNuevo}
-                    autoFocus
+                    value={nombreAreaNueva}
+                    onChangeText={setNombreAreaNueva}
                   />
+                  <View style={styles.iconPickerRow}>
+                    {ICONOS_AREA_NUEVA.map(ic => (
+                      <TouchableOpacity
+                        key={ic}
+                        style={[styles.iconOpt, iconoAreaNueva === ic && styles.iconOptSelected]}
+                        onPress={() => setIconoAreaNueva(ic)}
+                      >
+                        <Text style={styles.iconOptText}>{ic}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                   <TouchableOpacity
-                    style={[styles.createBtn, (!nombreNuevo.trim() || procesando) && styles.disabled]}
-                    onPress={handleCrearNuevo}
-                    disabled={!nombreNuevo.trim() || procesando}
+                    style={styles.crearAreaBtn}
+                    onPress={handleCrearArea}
+                    disabled={!nombreAreaNueva.trim() || creandoAreaProcesando}
                   >
-                    <Text style={styles.createBtnText}>{procesando ? '...' : 'Entrar'}</Text>
+                    <Text style={styles.crearAreaBtnText}>
+                      {creandoAreaProcesando ? 'Creando…' : `✓ Crear área "${nombreAreaNueva.trim() || '...'}"`}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               )}
+            </View>
+          </ScrollView>
 
-              {!hayCupo && (
-                <Text style={styles.llenoText}>
-                  🔒 Esta sala ya tiene {MAX_OPERADORES_POR_AREA} operadores hoy. Si eres uno de ellos, toca tu nombre arriba.
-                </Text>
-              )}
-            </>
+          {recientes.length > 0 && (
+            <View style={styles.recentWrap}>
+              <Text style={styles.recentLabel}>Tus sesiones recientes en este celular</Text>
+              <FlatList
+                data={recientes}
+                keyExtractor={item => item.id}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8 }}
+                renderItem={({ item }) => {
+                  const fecha = new Date(item.created_at).toLocaleDateString('es-MX', {
+                    day: '2-digit', month: '2-digit',
+                  })
+                  return (
+                    <TouchableOpacity
+                      style={[styles.recentChip, item.activa === 1 && styles.recentChipActiva]}
+                      onPress={() => handleSeleccionarHistorial(item)}
+                    >
+                      <View style={[styles.recentDot, item.activa === 1 && styles.recentDotActiva]} />
+                      <Text style={styles.recentChipText}>{fecha} · {nombreArea(item.area_id)}</Text>
+                    </TouchableOpacity>
+                  )
+                }}
+              />
+            </View>
           )}
         </View>
       </View>
+
+      <HistorialAreaModal areaId={historialAreaId} onClose={() => setHistorialAreaId(null)} />
     </Modal>
   )
 }
@@ -298,7 +502,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
-    maxHeight: '90%',
+    maxHeight: '92%',
   },
   closeBtn: {
     position: 'absolute',
@@ -318,209 +522,337 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
   title: {
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: '800',
     color: COLORS.primary,
     textAlign: 'center',
-    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 12.5,
     color: COLORS.textLight,
     textAlign: 'center',
-    marginBottom: 20,
+    marginTop: 2,
+    marginBottom: 14,
   },
-  backRow: {
-    alignSelf: 'flex-start',
-    marginBottom: 10,
-  },
-  backText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.primary,
-  },
-  areaGrid: {
+  opTag: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    justifyContent: 'space-between',
-    paddingBottom: 10,
-  },
-  areaCard: {
-    width: '47%',
+    alignItems: 'center',
+    gap: 10,
     backgroundColor: COLORS.card,
-    borderRadius: SIZES.radiusLg,
     borderWidth: 1,
     borderColor: COLORS.border,
-    paddingVertical: 18,
-    paddingHorizontal: 10,
+    borderRadius: SIZES.radiusLg,
+    padding: 10,
+    marginBottom: 14,
+  },
+  opAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.primary,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  areaCardIcon: {
-    fontSize: 30,
-    marginBottom: 6,
+  opAvatarText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 13,
   },
-  areaCardNombre: {
-    fontSize: 14,
+  opName: {
     fontWeight: '700',
+    fontSize: 13.5,
     color: COLORS.text,
-    textAlign: 'center',
   },
-  areaCardEstado: {
+  opRole: {
     fontSize: 11,
     color: COLORS.textLight,
-    marginTop: 4,
-    textAlign: 'center',
+    marginTop: 1,
   },
-  historialLink: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textLight,
-    textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  operadorBtn: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: COLORS.card,
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    borderRadius: SIZES.radiusLg,
-    paddingVertical: 16,
-    paddingHorizontal: 18,
-    marginBottom: 12,
-  },
-  operadorBtnText: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: COLORS.primary,
-  },
-  operadorBtnHint: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textLight,
-  },
-  operadorBtnBloqueado: {
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
-  },
-  operadorBtnTextBloqueado: {
-    color: COLORS.textLight,
-  },
-  salirLink: {
-    alignSelf: 'center',
-    marginBottom: 10,
-    marginTop: 4,
+  opLiveDot: {
+    color: '#2ecc71',
+    fontSize: 9,
   },
   salirLinkText: {
     fontSize: 12,
     fontWeight: '700',
     color: COLORS.danger,
   },
-  nuevoBtn: {
-    borderWidth: 2,
-    borderColor: COLORS.border,
-    borderStyle: 'dashed',
-    borderRadius: SIZES.radiusLg,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginBottom: 12,
+  salasScroll: {
+    flexGrow: 0,
   },
-  nuevoBtnText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.textLight,
-  },
-  llenoText: {
-    fontSize: 13,
-    color: COLORS.danger,
-    textAlign: 'center',
-    marginTop: 10,
-  },
-  inputRow: {
-    flexDirection: 'row',
+  salasContent: {
     gap: 10,
+    paddingBottom: 6,
   },
-  input: {
-    flex: 1,
-    borderWidth: 2,
+  room: {
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: SIZES.radius,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: COLORS.bg,
+    borderRadius: SIZES.radiusLg,
+    overflow: 'hidden',
   },
-  createBtn: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 24,
-    borderRadius: SIZES.radius,
+  roomRowOuter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+  },
+  roomRowMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minWidth: 0,
+  },
+  roomIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: COLORS.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  disabled: {
-    opacity: 0.5,
+  roomIconLocked: {
+    backgroundColor: COLORS.border,
   },
-  createBtnText: {
-    color: 'white',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  list: {
-    maxHeight: 300,
-    marginTop: 6,
-  },
-  listContent: {
-    gap: 8,
-  },
-  sessionItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: COLORS.card,
-    padding: 14,
-    borderRadius: SIZES.radius,
-    borderWidth: 1,
+  roomIconNueva: {
+    borderWidth: 1.5,
     borderColor: COLORS.border,
+    borderStyle: 'dashed',
+    backgroundColor: 'transparent',
   },
-  sessionActiva: {
-    borderColor: COLORS.primary,
-    backgroundColor: 'rgba(26,95,42,0.04)',
+  roomIconText: {
+    fontSize: 19,
   },
-  sessionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  sessionIcon: {
-    fontSize: 20,
-  },
-  sessionName: {
-    fontWeight: '700',
-    fontSize: 15,
+  roomName: {
+    fontWeight: '800',
+    fontSize: 15.5,
     color: COLORS.text,
   },
-  sessionDate: {
-    fontSize: 12,
-    color: COLORS.textLight,
-    marginTop: 2,
-  },
-  sessionRight: {
-    alignItems: 'flex-end',
-  },
-  sessionCount: {
-    fontSize: 12,
+  roomNameLocked: {
     color: COLORS.textLight,
   },
-  sessionTotal: {
-    fontWeight: '800',
+  roomNameNueva: {
+    fontWeight: '700',
     fontSize: 15,
-    color: COLORS.primary,
-  },
-  emptyText: {
-    textAlign: 'center',
     color: COLORS.textLight,
-    paddingVertical: 30,
+  },
+  roomOcupantes: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginTop: 1,
+  },
+  roomSide: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  histBtn: {
+    padding: 2,
+  },
+  histBtnText: {
+    fontSize: 15,
+  },
+  pill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  pillText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  pillOk: {
+    backgroundColor: 'rgba(46,204,113,0.14)',
+  },
+  pillWarn: {
+    backgroundColor: 'rgba(230,126,34,0.16)',
+  },
+  pillDanger: {
+    backgroundColor: 'rgba(192,57,43,0.14)',
+  },
+  pillLocked: {
+    backgroundColor: COLORS.border,
+  },
+  roomExpand: {
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    padding: 12,
+    gap: 8,
+  },
+  lockedNote: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    lineHeight: 17,
+  },
+  pinRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  pinInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: SIZES.radiusSm,
+    padding: 10,
+    fontSize: 15,
+    letterSpacing: 4,
+    backgroundColor: COLORS.card,
+    color: COLORS.text,
+  },
+  reopenBtn: {
+    backgroundColor: COLORS.warning,
+    paddingHorizontal: 14,
+    borderRadius: SIZES.radiusSm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reopenBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12.5,
+  },
+  whoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 10,
+    borderRadius: SIZES.radiusSm,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    backgroundColor: 'rgba(26,95,42,0.06)',
+  },
+  whoRowLocked: {
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
+    opacity: 0.75,
+  },
+  whoName: {
+    fontWeight: '700',
+    fontSize: 13.5,
+    color: COLORS.text,
+  },
+  whoHint: {
+    fontSize: 11,
+    color: COLORS.textLight,
+    fontWeight: '600',
+  },
+  newOpRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  newOpInput: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderStyle: 'dashed',
+    borderRadius: SIZES.radiusSm,
+    padding: 10,
+    fontSize: 13,
+    backgroundColor: COLORS.card,
+    color: COLORS.text,
+  },
+  joinBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 14,
+    borderRadius: SIZES.radiusSm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  joinBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12.5,
+  },
+  llenoText: {
+    fontSize: 12,
+    color: COLORS.danger,
+    textAlign: 'center',
+  },
+  roomNueva: {
+    borderStyle: 'dashed',
+    borderWidth: 1.5,
+  },
+  newAreaInput: {
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: SIZES.radiusSm,
+    padding: 10,
+    fontSize: 13,
+    backgroundColor: COLORS.card,
+    color: COLORS.text,
+  },
+  iconPickerRow: {
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  iconOpt: {
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconOptSelected: {
+    borderColor: COLORS.primary,
+    backgroundColor: 'rgba(26,95,42,0.08)',
+  },
+  iconOptText: {
+    fontSize: 16,
+  },
+  crearAreaBtn: {
+    backgroundColor: COLORS.primary,
+    padding: 12,
+    borderRadius: SIZES.radiusSm,
+    alignItems: 'center',
+  },
+  crearAreaBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  recentWrap: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  recentLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.textLight,
+    marginBottom: 8,
+  },
+  recentChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 999,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    backgroundColor: COLORS.card,
+  },
+  recentChipActiva: {
+    borderColor: COLORS.primary,
+  },
+  recentDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.textLight,
+  },
+  recentDotActiva: {
+    backgroundColor: '#2ecc71',
+  },
+  recentChipText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: COLORS.text,
   },
 })

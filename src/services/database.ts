@@ -58,9 +58,26 @@ export async function initDatabase(): Promise<void> {
       estado TEXT NOT NULL DEFAULT 'pendiente'
     );
     CREATE INDEX IF NOT EXISTS idx_lotes_area_codigo ON inv_lotes(area_id, codigo);
+
+    CREATE TABLE IF NOT EXISTS inv_areas_cache (
+      id TEXT PRIMARY KEY,
+      nombre TEXT NOT NULL,
+      icono TEXT NOT NULL DEFAULT '',
+      orden INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS inv_cierres_cache (
+      area_id TEXT NOT NULL,
+      fecha TEXT NOT NULL,
+      cerrado INTEGER NOT NULL DEFAULT 0,
+      cerrado_por TEXT DEFAULT '',
+      cerrado_at TEXT DEFAULT '',
+      PRIMARY KEY (area_id, fecha)
+    );
   `)
 
   await seedMateriales()
+  await seedAreas()
   await migrarBase()
 }
 
@@ -110,6 +127,31 @@ async function seedMateriales(): Promise<void> {
     await db.runAsync(
       'INSERT INTO inv_materiales (id, nombre, codigo, icono) VALUES (?, ?, ?, ?)',
       [m.id, m.nombre, m.codigo, m.icono]
+    )
+  }
+}
+
+/**
+ * Siembra las 5 áreas que ya existían fijas en el código, para que la app
+ * funcione sin internet incluso antes de la primera sincronización con
+ * Supabase (que es la fuente de verdad real desde ahora — ver sync.ts).
+ */
+async function seedAreas(): Promise<void> {
+  const count = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM inv_areas_cache')
+  if (count && count.count > 0) return
+
+  const areas = [
+    { id: 'produccion', nombre: 'Producción', icono: '🏭', orden: 1 },
+    { id: 'cargue', nombre: 'Cargue', icono: '⬆️', orden: 2 },
+    { id: 'tarjeta', nombre: 'Tarjeta', icono: '🎫', orden: 3 },
+    { id: 'descargue_sur', nombre: 'Descargue Sur', icono: '🔽', orden: 4 },
+    { id: 'descargue_norte', nombre: 'Descargue Norte', icono: '🔼', orden: 5 },
+  ]
+
+  for (const a of areas) {
+    await db.runAsync(
+      'INSERT INTO inv_areas_cache (id, nombre, icono, orden) VALUES (?, ?, ?, ?)',
+      [a.id, a.nombre, a.icono, a.orden]
     )
   }
 }

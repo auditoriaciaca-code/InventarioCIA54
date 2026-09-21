@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { AREAS } from '../constants/areas'
+import { useAreas } from '../lib/useAreas'
 import type { Lote } from '../types'
 
 function parsearCodigos(texto: string): string[] {
@@ -14,7 +14,8 @@ function parsearCodigos(texto: string): string[] {
 }
 
 export default function Lotes() {
-  const [areaId, setAreaId] = useState(AREAS[0]?.id || '')
+  const areas = useAreas()
+  const [areaId, setAreaId] = useState('')
   const [lotes, setLotes] = useState<Lote[]>([])
   const [conectado, setConectado] = useState(false)
   const [cargando, setCargando] = useState(true)
@@ -27,6 +28,11 @@ export default function Lotes() {
   const [excluidosPegado, setExcluidosPegado] = useState<Set<string>>(new Set())
 
   useEffect(() => {
+    if (!areaId && areas.length > 0) setAreaId(areas[0].id)
+  }, [areas, areaId])
+
+  useEffect(() => {
+    if (!areaId) return
     let activo = true
     setCargando(true)
     setMensaje(null)
@@ -163,7 +169,7 @@ export default function Lotes() {
         <label>
           Área
           <select value={areaId} onChange={e => setAreaId(e.target.value)}>
-            {AREAS.map(a => (
+            {areas.map(a => (
               <option key={a.id} value={a.id}>
                 {a.icono} {a.nombre}
               </option>

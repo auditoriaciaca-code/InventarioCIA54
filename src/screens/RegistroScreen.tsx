@@ -13,7 +13,8 @@ import ReferenciaSelector from '../components/ReferenciaSelector'
 import QrScanner from '../components/QrScanner'
 import ScaleReader from '../components/ScaleReader'
 import { getDatabase } from '../services/database'
-import { subirEnSegundoPlano, subirFotosEnSegundoPlano } from '../services/sync'
+import { subirEnSegundoPlano, subirFotosEnSegundoPlano, estaAreaCerradaHoy, sincronizarCierresHoy } from '../services/sync'
+import { nombreArea } from '../constants/areas'
 import { COLORS, SIZES } from '../constants/theme'
 import { CATEGORIA_MAP, CATEGORIAS } from '../constants/materiales'
 import { Referencia } from '../types'
@@ -37,6 +38,10 @@ export default function RegistroScreen() {
   const [scaleReaderVisible, setScaleReaderVisible] = useState(false)
   const scrollRef = useRef<ScrollView>(null)
   const scrollTo = (y: number) => scrollRef.current?.scrollTo({ y, animated: true })
+
+  useEffect(() => {
+    sincronizarCierresHoy()
+  }, [sesion?.area_id])
 
   const TODOS_CODIGOS = CATEGORIAS
     .flatMap(c => c.referencias.map(r => r.codigo))
@@ -103,6 +108,13 @@ export default function RegistroScreen() {
     }
     if (neto < 0) {
       Alert.alert('Error', 'El peso neto no puede ser negativo')
+      return
+    }
+    if (await estaAreaCerradaHoy(sesion.area_id || '')) {
+      Alert.alert(
+        'Inventario finalizado',
+        `${nombreArea(sesion.area_id)} ya fue finalizado hoy. Solo el supervisor puede reabrirlo (Salas → 🔓 Reabrir).`
+      )
       return
     }
 

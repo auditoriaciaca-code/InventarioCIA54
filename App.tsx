@@ -9,6 +9,7 @@ import InventarioScreen from './src/screens/InventarioScreen'
 import ResumenScreen from './src/screens/ResumenScreen'
 import ChatRegistroScreen from './src/screens/ChatRegistroScreen'
 import { initDatabase } from './src/services/database'
+import { cargarAreasLocal, sincronizarAreas } from './src/services/sync'
 import { COLORS } from './src/constants/theme'
 import { SesionProvider } from './src/context/SesionContext'
 import { ComparacionesProvider } from './src/context/ComparacionesContext'
@@ -23,7 +24,11 @@ export default function App() {
 
   useEffect(() => {
     initDatabase()
-      .then(() => setReady(true))
+      .then(async () => {
+        await cargarAreasLocal()
+        setReady(true)
+        sincronizarAreas()
+      })
       .catch((e: any) => setError(e?.message || 'Error al inicializar BD'))
   }, [])
 

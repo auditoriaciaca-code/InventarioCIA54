@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { AREAS, nombreArea } from '../constants/areas'
+import { nombreArea } from '../constants/areas'
+import { useAreas } from '../lib/useAreas'
 import { MATERIAL_MAP } from '../constants/materiales'
 import { hoyLocalISO, rangoDelDia, formatoHora, formatoFechaLarga } from '../lib/fechas'
 import type { Foto, RegistroPesada } from '../types'
@@ -16,6 +17,7 @@ function mergeFoto(mapa: Map<string, Foto[]>, foto: Foto): Map<string, Foto[]> {
 }
 
 export default function EnVivo() {
+  const areas = useAreas()
   const [fecha, setFecha] = useState(hoyLocalISO())
   const [areaId, setAreaId] = useState('')
   const [registros, setRegistros] = useState<RegistroPesada[]>([])
@@ -116,7 +118,7 @@ export default function EnVivo() {
           Área
           <select value={areaId} onChange={e => setAreaId(e.target.value)}>
             <option value="">Todas</option>
-            {AREAS.map(a => (
+            {areas.map(a => (
               <option key={a.id} value={a.id}>
                 {a.icono} {a.nombre}
               </option>

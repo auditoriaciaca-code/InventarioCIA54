@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { AREAS, nombreArea } from '../constants/areas'
+import { nombreArea } from '../constants/areas'
+import { useAreas } from '../lib/useAreas'
 import { hoyLocalISO, rangoDelDia, formatoFechaLarga } from '../lib/fechas'
 import { agruparPorReferencia, generarXls, descargarXls } from '../lib/plantillaExcel'
 import type { RegistroPesada } from '../types'
 
 export default function Borrador() {
+  const areas = useAreas()
   const [fecha, setFecha] = useState(hoyLocalISO())
   const [areaId, setAreaId] = useState('')
   const [registros, setRegistros] = useState<RegistroPesada[]>([])
@@ -65,7 +67,7 @@ export default function Borrador() {
           Área
           <select value={areaId} onChange={e => setAreaId(e.target.value)}>
             <option value="">Todas</option>
-            {AREAS.map(a => (
+            {areas.map(a => (
               <option key={a.id} value={a.id}>
                 {a.icono} {a.nombre}
               </option>

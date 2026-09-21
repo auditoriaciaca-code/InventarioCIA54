@@ -10,6 +10,10 @@ import { COLORS, SIZES } from '../constants/theme'
 import { useSesion } from '../context/SesionContext'
 import { File, Paths } from 'expo-file-system'
 import DetalleMaterial from '../components/DetalleMaterial'
+import { finalizarInventarioRemoto } from '../services/supabase'
+import { estaAreaCerradaHoy, sincronizarCierresHoy } from '../services/sync'
+import { hoyLocalISO } from '../utils/fechas'
+import { nombreArea } from '../constants/areas'
 
 export default function ResumenScreen() {
   const { sesion } = useSesion()
@@ -18,12 +22,45 @@ export default function ResumenScreen() {
   const [sonido, setSonido] = useState(true)
   const [autoSync, setAutoSync] = useState(false)
   const [materialSeleccionado, setMaterialSeleccionado] = useState<ResumenMaterial | null>(null)
+  const [cerrada, setCerrada] = useState(false)
+  const [finalizando, setFinalizando] = useState(false)
 
   useFocusEffect(
     useCallback(() => {
-      if (sesion) cargarRegistros()
+      if (sesion) {
+        cargarRegistros()
+        sincronizarCierresHoy().then(() => {
+          estaAreaCerradaHoy(sesion.area_id || '').then(setCerrada)
+        })
+      }
     }, [sesion])
   )
+
+  async function handleFinalizar() {
+    if (!sesion) return
+    Alert.alert(
+      '¿Finalizar inventario?',
+      `Se bloqueará ${nombreArea(sesion.area_id)} por hoy — nadie podrá registrar ni modificar pesadas hasta que el supervisor lo reabra con su clave.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Finalizar',
+          style: 'destructive',
+          onPress: async () => {
+            setFinalizando(true)
+            const ok = await finalizarInventarioRemoto(sesion.area_id || '', hoyLocalISO(), sesion.nombre_operador)
+            setFinalizando(false)
+            if (ok) {
+              await sincronizarCierresHoy()
+              setCerrada(true)
+            } else {
+              Alert.alert('Sin conexión', 'No se pudo finalizar. Intenta de nuevo.')
+            }
+          },
+        },
+      ]
+    )
+  }
 
   async function cargarRegistros() {
     try {
@@ -342,6 +379,28 @@ export default function ResumenScreen() {
         </View>
       </View>
 
+      <View style={styles.card}>
+        {cerrada ? (
+          <View style={styles.finalizadoBox}>
+            <Text style={styles.finalizadoText}>✅ Inventario finalizado hoy</Text>
+            <Text style={styles.finalizadoHint}>
+              Nadie puede registrar ni modificar pesadas aquí hasta que el supervisor lo reabra desde Salas.
+            </Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.finalizarBtn}
+            onPress={handleFinalizar}
+            disabled={finalizando || !sesion}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.finalizarBtnText}>
+              {finalizando ? 'Finalizando…' : `✅ Finalizar inventario de ${nombreArea(sesion?.area_id)}`}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
       <View style={{ height: 40 }} />
     </ScrollView>
   )
@@ -616,5 +675,31 @@ const styles = StyleSheet.create({
   printTotalText: {
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  finalizarBtn: {
+    backgroundColor: COLORS.primary,
+    padding: 16,
+    borderRadius: SIZES.radius,
+    alignItems: 'center',
+  },
+  finalizarBtnText: {
+    color: 'white',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  finalizadoBox: {
+    alignItems: 'center',
+    gap: 6,
+  },
+  finalizadoText: {
+    fontWeight: '800',
+    fontSize: 16,
+    color: COLORS.primary,
+  },
+  finalizadoHint: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    textAlign: 'center',
+    lineHeight: 17,
   },
 })

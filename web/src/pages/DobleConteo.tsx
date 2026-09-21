@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { AREAS, nombreArea } from '../constants/areas'
+import { nombreArea } from '../constants/areas'
+import { useAreas } from '../lib/useAreas'
 import { CATEGORIA_MAP } from '../constants/materiales'
 import { formatDescripcion } from '../lib/format'
 import { hoyLocalISO, rangoDelDia, formatoHora } from '../lib/fechas'
@@ -14,6 +15,7 @@ function nombreCorto(materialId: string, referenciaCodigo: string): string {
 }
 
 export default function DobleConteo() {
+  const areas = useAreas()
   const [fecha, setFecha] = useState(hoyLocalISO())
   const [areaId, setAreaId] = useState('')
   const [mostrarAnuladas, setMostrarAnuladas] = useState(false)
@@ -89,7 +91,7 @@ export default function DobleConteo() {
           Área
           <select value={areaId} onChange={e => setAreaId(e.target.value)}>
             <option value="">Todas</option>
-            {AREAS.map(a => (
+            {areas.map(a => (
               <option key={a.id} value={a.id}>
                 {a.icono} {a.nombre}
               </option>

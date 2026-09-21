@@ -199,3 +199,142 @@ export async function liberarSesionInmediato(sesionId: string): Promise<boolean>
     return false
   }
 }
+
+/**
+ * Catálogo de áreas (ya no está fijo en el código — se sincroniza desde
+ * Supabase, ver sincronizarAreas() en sync.ts). null = falló, [] = no hay
+ * ninguna (no debería pasar, pero por si acaso).
+ */
+export async function obtenerAreas(): Promise<
+  Array<{ id: string; nombre: string; icono: string; orden: number }> | null
+> {
+  try {
+    const { data, error } = await supabase
+      .from('inv_areas')
+      .select('id, nombre, icono, orden')
+      .order('orden', { ascending: true })
+    if (error) return null
+    return data ?? []
+  } catch {
+    return null
+  }
+}
+
+/** Crea una nueva área permanente (botón "+ Crear nueva área" del lobby). */
+export async function crearAreaRemota(area: {
+  id: string
+  nombre: string
+  icono: string
+  orden: number
+}): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('inv_areas').insert([area])
+    return !error
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Cierres de HOY para todas las áreas de un jalón (el lobby los necesita
+ * todos a la vez). Devuelve un mapa area_id -> fila de cierre.
+ */
+export async function obtenerCierresHoy(): Promise<Record<string, any>> {
+  try {
+    const hoy = new Date().toISOString().slice(0, 10)
+    const { data, error } = await supabase.from('inv_cierres').select('*').eq('fecha', hoy)
+    if (error || !data) return {}
+    const mapa: Record<string, any> = {}
+    for (const row of data as any[]) mapa[row.area_id] = row
+    return mapa
+  } catch {
+    return {}
+  }
+}
+
+/** Marca un área como finalizada para una fecha puntual (no es permanente). */
+export async function finalizarInventarioRemoto(
+  areaId: string,
+  fecha: string,
+  operador: string
+): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('inv_cierres').upsert([
+      {
+        area_id: areaId,
+        fecha,
+        cerrado: true,
+        cerrado_por: operador,
+        cerrado_at: new Date().toISOString(),
+      },
+    ])
+    return !error
+  } catch {
+    return false
+  }
+}
+
+/** Reabre un área ya finalizada el mismo día (requiere clave de supervisor validada antes de llamar esto). */
+export async function reabrirInventarioRemoto(
+  areaId: string,
+  fecha: string,
+  operador: string
+): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('inv_cierres')
+      .update({ cerrado: false, reabierto_por: operador, reabierto_at: new Date().toISOString() })
+      .eq('area_id', areaId)
+      .eq('fecha', fecha)
+    return !error
+  } catch {
+    return false
+  }
+}
+
+/** Hash guardado de la clave del supervisor (vacío si nunca se configuró). */
+export async function obtenerClaveSupervisorHash(): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('inv_config')
+      .select('valor')
+      .eq('clave', 'clave_supervisor_hash')
+      .maybeSingle()
+    if (error) return null
+    return data?.valor ?? ''
+  } catch {
+    return null
+  }
+}
+
+/** Configura (o cambia) la clave del supervisor — guarda solo el hash. */
+export async function guardarClaveSupervisorHash(hash: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('inv_config')
+      .upsert([{ clave: 'clave_supervisor_hash', valor: hash, actualizado_at: new Date().toISOString() }])
+    return !error
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Todas las pesadas históricas de un área (cualquier operador, cualquier
+ * celular) para armar el historial por jornada. Se agrupan por día en el
+ * cliente, igual que ya se hace para el resumen de una sesión.
+ */
+export async function obtenerHistorialArea(areaId: string): Promise<any[]> {
+  try {
+    const { data, error } = await supabase
+      .from('inv_registros')
+      .select('id, peso_bruto, tara, created_by, created_at')
+      .eq('area_id', areaId)
+      .order('created_at', { ascending: false })
+      .limit(5000)
+    if (error || !data) return []
+    return data
+  } catch {
+    return []
+  }
+}

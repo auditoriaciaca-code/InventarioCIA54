@@ -18,7 +18,8 @@ import ComparacionTabla from '../components/ComparacionTabla'
 import QrScanner from '../components/QrScanner'
 import LoteAutocomplete from '../components/LoteAutocomplete'
 import { getDatabase } from '../services/database'
-import { subirEnSegundoPlano, sincronizarLotes, subirFotosEnSegundoPlano } from '../services/sync'
+import { subirEnSegundoPlano, sincronizarLotes, subirFotosEnSegundoPlano, sincronizarCierresHoy, estaAreaCerradaHoy } from '../services/sync'
+import { nombreArea } from '../constants/areas'
 import { COLORS, SIZES } from '../constants/theme'
 import { CATEGORIA_MAP, MATERIAL_MAP } from '../constants/materiales'
 import { parseMensaje } from '../utils/chatParser'
@@ -137,6 +138,7 @@ export default function ChatRegistroScreen() {
       if (sesion) {
         cargarHistorial()
         sincronizarLotes(sesion.area_id || '')
+        sincronizarCierresHoy()
       }
     }, [sesion])
   )
@@ -325,6 +327,13 @@ export default function ChatRegistroScreen() {
     loteCodigo?: string
   ): Promise<boolean> {
     if (!sesion) return false
+    if (await estaAreaCerradaHoy(sesion.area_id || '')) {
+      Alert.alert(
+        'Inventario finalizado',
+        `${nombreArea(sesion.area_id)} ya fue finalizado hoy. Solo el supervisor puede reabrirlo (Salas → 🔓 Reabrir).`
+      )
+      return false
+    }
     const neto = pesoBruto - taraEfectiva
     if (!(pesoBruto > 0) || neto < 0) return false
 
@@ -453,6 +462,10 @@ export default function ChatRegistroScreen() {
     const t = parseFloat(editTara)
     if (isNaN(pb) || pb <= 0) { Alert.alert('Error', 'Peso bruto inválido'); return }
     if (isNaN(t) || t < 0) { Alert.alert('Error', 'Tara inválida'); return }
+    if (await estaAreaCerradaHoy(editando.area_id || sesion?.area_id || '')) {
+      Alert.alert('Inventario finalizado', 'Esta área ya fue finalizada hoy — no se puede editar.')
+      return
+    }
     try {
       const db = getDatabase()
       const lote = editLote.trim()
@@ -473,7 +486,11 @@ export default function ChatRegistroScreen() {
     }
   }
 
-  function handleLongPressRegistro(r: RegistroPesada) {
+  async function handleLongPressRegistro(r: RegistroPesada) {
+    if (await estaAreaCerradaHoy(r.area_id || sesion?.area_id || '')) {
+      Alert.alert('Inventario finalizado', 'Esta área ya fue finalizada hoy — no se puede eliminar nada.')
+      return
+    }
     Alert.alert(
       '¿Eliminar registro?',
       'Esta acción no se puede deshacer',

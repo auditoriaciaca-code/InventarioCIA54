@@ -594,3 +594,52 @@ CREATE POLICY "inv_fotos_anon_update" ON storage.objects
 FOR UPDATE TO anon
 USING (bucket_id = 'inv_fotos')
 WITH CHECK (bucket_id = 'inv_fotos');
+
+-- =====================================================================
+-- CIERRE DE INVENTARIO POR ÁREA + DÍA, Y ÁREAS DINÁMICAS  (2026-09)
+-- Rediseño del "lobby" de inicio de sesión: las áreas dejan de estar
+-- fijas en el código (se siguen viendo en inv_areas, que ya existía,
+-- pero ahora se puede insertar una nueva desde la app) y se agrega la
+-- posibilidad de "finalizar" el inventario de un área para un día
+-- puntual — no es un cierre permanente del área, solo de ese día — y
+-- reabrirlo con una clave de supervisor.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS inv_cierres (
+  area_id       TEXT NOT NULL,
+  fecha         DATE NOT NULL,
+  cerrado       BOOLEAN NOT NULL DEFAULT TRUE,
+  cerrado_por   TEXT,
+  cerrado_at    TIMESTAMPTZ,
+  reabierto_por TEXT,
+  reabierto_at  TIMESTAMPTZ,
+  PRIMARY KEY (area_id, fecha)
+);
+ALTER TABLE inv_cierres DISABLE ROW LEVEL SECURITY;
+
+-- Clave del supervisor para reabrir un día ya finalizado. Se guarda
+-- como hash (no en texto plano) para que no quede a la vista en una
+-- consulta directa a la tabla; de todas formas no es una protección
+-- fuerte (no hay auth real en la app todavía), es un freno contra
+-- reaperturas accidentales, no contra alguien editando la BD a mano.
+-- Arranca vacía: la primera persona que intente "reabrir" la configura.
+CREATE TABLE IF NOT EXISTS inv_config (
+  clave          TEXT PRIMARY KEY,
+  valor          TEXT NOT NULL,
+  actualizado_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE inv_config DISABLE ROW LEVEL SECURITY;
+INSERT INTO inv_config (clave, valor) VALUES ('clave_supervisor_hash', '')
+ON CONFLICT (clave) DO NOTHING;
+
+ALTER TABLE inv_areas   REPLICA IDENTITY FULL;
+ALTER TABLE inv_cierres REPLICA IDENTITY FULL;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE inv_areas;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE inv_cierres;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
