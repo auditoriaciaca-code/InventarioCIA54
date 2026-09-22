@@ -16,6 +16,7 @@ import ComparacionTabla from '../components/ComparacionTabla'
 import QrScanner from '../components/QrScanner'
 import LoteAutocomplete from '../components/LoteAutocomplete'
 import NumericKeypad from '../components/NumericKeypad'
+import QuickActionsFab from '../components/QuickActionsFab'
 import CameraCapture from '../components/CameraCapture'
 import MaterialPickerPanel from '../components/MaterialPickerPanel'
 import ScaleReader from '../components/ScaleReader'
@@ -614,32 +615,40 @@ export default function ChatRegistroScreen() {
       >
       <ReferenciaChipsBar chips={chips} activo={activeReferencia} onSelectChip={activarReferencia} />
 
-      <FlatList
-        ref={flatListRef}
-        style={styles.flatList}
-        data={items}
-        keyExtractor={item => item.key}
-        contentContainerStyle={styles.list}
-        renderItem={({ item }) => (
-          <ChatBubble
-            item={item}
-            fotos={item.kind === 'registro' ? fotosPorRegistro.get(item.registro.id) : undefined}
-            comparacion={item.kind === 'registro' ? porRegistro[item.registro.id] : undefined}
-            usarTara={usarTara}
-            onPressRegistro={handleEditRegistro}
-            onLongPressRegistro={handleLongPressRegistro}
-            onPressPending={handleAbrirCorreccion}
-            onPressFoto={handleVerFotos}
-          />
-        )}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>💬</Text>
-            <Text style={styles.emptyTitle}>Sin mensajes aún</Text>
-            <Text style={styles.emptyDesc}>Escribe un material o un peso para empezar</Text>
-          </View>
-        }
-      />
+      <View style={styles.chatArea}>
+        <FlatList
+          ref={flatListRef}
+          style={styles.flatList}
+          data={items}
+          keyExtractor={item => item.key}
+          contentContainerStyle={styles.list}
+          renderItem={({ item }) => (
+            <ChatBubble
+              item={item}
+              fotos={item.kind === 'registro' ? fotosPorRegistro.get(item.registro.id) : undefined}
+              comparacion={item.kind === 'registro' ? porRegistro[item.registro.id] : undefined}
+              usarTara={usarTara}
+              onPressRegistro={handleEditRegistro}
+              onLongPressRegistro={handleLongPressRegistro}
+              onPressPending={handleAbrirCorreccion}
+              onPressFoto={handleVerFotos}
+            />
+          )}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>💬</Text>
+              <Text style={styles.emptyTitle}>Sin mensajes aún</Text>
+              <Text style={styles.emptyDesc}>Escribe un material o un peso para empezar</Text>
+            </View>
+          }
+        />
+        <QuickActionsFab
+          onFoto={handleAbrirCamara}
+          onBascula={() => setBasculaVisible(true)}
+          onLote={() => setLoteScannerVisible(true)}
+          onLoteLongPress={abrirModalLote}
+        />
+      </View>
 
       <View style={styles.footer}>
         {usarTara && (
@@ -667,20 +676,6 @@ export default function ChatRegistroScreen() {
         ) : (
           <Text style={styles.materialBarVacio}>Sin material seleccionado</Text>
         )}
-        <TouchableOpacity style={styles.quickIconBtn} onPress={handleAbrirCamara} activeOpacity={0.7}>
-          <Text style={styles.quickIconBtnText}>📷</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.quickIconBtn} onPress={() => setBasculaVisible(true)} activeOpacity={0.7}>
-          <Text style={styles.quickIconBtnText}>⚖️</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.quickIconBtn}
-          onPress={() => setLoteScannerVisible(true)}
-          onLongPress={abrirModalLote}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.quickIconBtnText}>🏷️</Text>
-        </TouchableOpacity>
         <TouchableOpacity style={styles.materialBarBtn} onPress={abrirMaterialPanel} activeOpacity={0.7}>
           <Text style={styles.materialBarBtnText}>🔀 Cambiar</Text>
         </TouchableOpacity>
@@ -1020,6 +1015,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
+  chatArea: {
+    flex: 1,
+    position: 'relative',
+  },
   flatList: {
     flex: 1,
   },
@@ -1257,19 +1256,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: '700',
     fontSize: 12,
-  },
-  quickIconBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: SIZES.radiusSm,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.bg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quickIconBtnText: {
-    fontSize: 15,
   },
   modalOverlay: {
     flex: 1,
