@@ -1,26 +1,49 @@
+import { forwardRef, useImperativeHandle, useState } from 'react'
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
 import { COLORS, SIZES } from '../constants/theme'
 
+export interface NumericKeypadHandle {
+  setValor: (v: string) => void
+}
+
 interface Props {
-  value: string
-  onChange: (v: string) => void
-  onSubmit: () => void
+  onSubmit: (pesoBruto: number) => boolean | void | Promise<boolean | void>
   submitLabel?: string
-  submitDisabled?: boolean
+  disabled?: boolean
 }
 
 const TECLAS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫']
 
-export default function NumericKeypad({ value, onChange, onSubmit, submitLabel = 'Enviar', submitDisabled }: Props) {
+// El valor tecleado vive aquí adentro (no en la pantalla completa de Rápido)
+// para que cada tecla solo vuelva a dibujar este teclado y no todo el chat.
+const NumericKeypad = forwardRef<NumericKeypadHandle, Props>(function NumericKeypad(
+  { onSubmit, submitLabel = 'Enviar', disabled },
+  ref
+) {
+  const [value, setValue] = useState('')
+
+  useImperativeHandle(ref, () => ({
+    setValor: (v: string) => setValue(v),
+  }))
+
   function presionar(tecla: string) {
     if (tecla === '⌫') {
-      onChange(value.slice(0, -1))
+      setValue(v => v.slice(0, -1))
       return
     }
     if (tecla === '.' && value.includes('.')) return
     if (value.length >= 8) return
-    onChange(value + tecla)
+    setValue(v => v + tecla)
   }
+
+  async function handleSubmit() {
+    const n = parseFloat(value)
+    if (!(n > 0)) return
+    const limpiar = await onSubmit(n)
+    if (limpiar !== false) setValue('')
+  }
+
+  const submitDisabled = disabled || !(parseFloat(value) > 0)
 
   return (
     <View style={styles.container}>
@@ -42,7 +65,7 @@ export default function NumericKeypad({ value, onChange, onSubmit, submitLabel =
       </View>
       <TouchableOpacity
         style={[styles.enviarBtn, submitDisabled && styles.enviarBtnDisabled]}
-        onPress={onSubmit}
+        onPress={handleSubmit}
         disabled={submitDisabled}
         activeOpacity={0.8}
       >
@@ -50,7 +73,9 @@ export default function NumericKeypad({ value, onChange, onSubmit, submitLabel =
       </TouchableOpacity>
     </View>
   )
-}
+})
+
+export default NumericKeypad
 
 const styles = StyleSheet.create({
   container: {

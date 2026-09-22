@@ -15,7 +15,7 @@ import ChatPhotoThumb from '../components/ChatPhotoThumb'
 import ComparacionTabla from '../components/ComparacionTabla'
 import QrScanner from '../components/QrScanner'
 import LoteAutocomplete from '../components/LoteAutocomplete'
-import NumericKeypad from '../components/NumericKeypad'
+import NumericKeypad, { NumericKeypadHandle } from '../components/NumericKeypad'
 import QuickActionsFab from '../components/QuickActionsFab'
 import CameraCapture from '../components/CameraCapture'
 import MaterialPickerPanel from '../components/MaterialPickerPanel'
@@ -123,11 +123,11 @@ export default function ChatRegistroScreen() {
   const [activeReferencia, setActiveReferencia] = useState<ReferenciaFlat | null>(null)
   const [chips, setChips] = useState<ReferenciaFlat[]>([])
 
-  const [pesoInput, setPesoInput] = useState('')
   const [inputFotos, setInputFotos] = useState<{ uri: string }[]>([])
   const [sending, setSending] = useState(false)
   const [camaraVisible, setCamaraVisible] = useState(false)
   const [basculaVisible, setBasculaVisible] = useState(false)
+  const keypadRef = useRef<NumericKeypadHandle>(null)
 
   const [loteScannerVisible, setLoteScannerVisible] = useState(false)
   const [inputLote, setInputLote] = useState<string | null>(null)
@@ -426,13 +426,10 @@ export default function ChatRegistroScreen() {
     irA(POS_CHAT)
   }
 
-  async function handleEnviarPeso() {
-    const pesoBruto = parseFloat(pesoInput)
-    if (!(pesoBruto > 0)) return
-
+  async function handleEnviarPeso(pesoBruto: number): Promise<boolean> {
     if (!activeReferencia) {
       abrirMaterialPanel()
-      return
+      return false
     }
 
     setSending(true)
@@ -442,8 +439,8 @@ export default function ChatRegistroScreen() {
       const taraEfectiva = usarTara ? tara : 0
       const ok = await insertarRegistro(activeReferencia, pesoBruto, taraEfectiva, fotos, lote)
       if (!ok) agregarPendiente(pesoBruto.toString(), pesoBruto, taraEfectiva, fotos, lote)
+      return true
     } finally {
-      setPesoInput('')
       setInputFotos([])
       quitarLoteInput()
       setSending(false)
@@ -714,10 +711,9 @@ export default function ChatRegistroScreen() {
       )}
 
       <NumericKeypad
-        value={pesoInput}
-        onChange={setPesoInput}
+        ref={keypadRef}
         onSubmit={handleEnviarPeso}
-        submitDisabled={sending || !(parseFloat(pesoInput) > 0)}
+        disabled={sending}
         submitLabel={activeReferencia ? `Enviar · ${activeReferencia.codigo}` : 'Elegir material'}
       />
 
@@ -732,7 +728,7 @@ export default function ChatRegistroScreen() {
       <Modal visible={basculaVisible} animationType="slide" onRequestClose={() => setBasculaVisible(false)}>
         <ScaleReader
           onClose={() => setBasculaVisible(false)}
-          onWeight={kg => { setPesoInput(kg.toString()); setBasculaVisible(false) }}
+          onWeight={kg => { keypadRef.current?.setValor(kg.toString()); setBasculaVisible(false) }}
         />
       </Modal>
 
