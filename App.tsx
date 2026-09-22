@@ -13,6 +13,7 @@ import { cargarAreasLocal, sincronizarAreas } from './src/services/sync'
 import { COLORS } from './src/constants/theme'
 import { SesionProvider } from './src/context/SesionContext'
 import { ComparacionesProvider } from './src/context/ComparacionesContext'
+import { ConfigProvider } from './src/context/ConfigContext'
 import SesionSelector from './src/components/SesionSelector'
 import HeaderSesionButton from './src/components/HeaderSesionButton'
 
@@ -53,6 +54,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+    <ConfigProvider>
     <SesionProvider>
     <ComparacionesProvider>
       <SesionSelector />
@@ -142,6 +144,7 @@ export default function App() {
       </NavigationContainer>
     </ComparacionesProvider>
     </SesionProvider>
+    </ConfigProvider>
     </SafeAreaProvider>
   )
 }

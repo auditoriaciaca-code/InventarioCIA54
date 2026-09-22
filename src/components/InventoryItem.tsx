@@ -3,6 +3,7 @@ import { RegistroPesada } from '../types'
 import { MATERIAL_MAP } from '../constants/materiales'
 import { COLORS, SIZES } from '../constants/theme'
 import { formatDescripcion } from '../utils/format'
+import { useConfig } from '../context/ConfigContext'
 
 interface Props {
   item: RegistroPesada
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export default function InventoryItem({ item, onEdit, onViewPhotos, onDelete }: Props) {
+  const { usarTara } = useConfig()
   const material = MATERIAL_MAP.get(item.material_id)
   const color = material?.color || COLORS.primary
   const hora = new Date(item.created_at).toLocaleTimeString('es-MX', {
@@ -45,20 +47,22 @@ export default function InventoryItem({ item, onEdit, onViewPhotos, onDelete }: 
           <Text style={styles.netoUnit}>kg neto</Text>
         </View>
       </View>
-      <View style={styles.details}>
-        <View style={styles.detailItem}>
-          <Text style={styles.detailLabel}>Bruto</Text>
-          <Text style={styles.detailValue}>{item.peso_bruto.toFixed(2)}</Text>
+      {usarTara && (
+        <View style={styles.details}>
+          <View style={styles.detailItem}>
+            <Text style={styles.detailLabel}>Bruto</Text>
+            <Text style={styles.detailValue}>{item.peso_bruto.toFixed(2)}</Text>
+          </View>
+          <View style={styles.detailItem}>
+            <Text style={styles.detailLabel}>Tara</Text>
+            <Text style={styles.detailValue}>{item.tara.toFixed(2)}</Text>
+          </View>
+          <View style={styles.detailItem}>
+            <Text style={styles.detailLabel}>Contenedor</Text>
+            <Text style={styles.detailValue}>{item.contenedor}</Text>
+          </View>
         </View>
-        <View style={styles.detailItem}>
-          <Text style={styles.detailLabel}>Tara</Text>
-          <Text style={styles.detailValue}>{item.tara.toFixed(2)}</Text>
-        </View>
-        <View style={styles.detailItem}>
-          <Text style={styles.detailLabel}>Contenedor</Text>
-          <Text style={styles.detailValue}>{item.contenedor}</Text>
-        </View>
-      </View>
+      )}
       <View style={styles.actions}>
         <TouchableOpacity style={styles.actionBtn} onPress={() => onEdit(item.id)}>
           <Text style={styles.actionText}>✏️ Editar</Text>

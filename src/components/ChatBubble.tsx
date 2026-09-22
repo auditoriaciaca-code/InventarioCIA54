@@ -7,6 +7,7 @@ interface Props {
   item: ChatListItem
   fotos?: Foto[]
   comparacion?: Comparacion
+  usarTara?: boolean
   onPressRegistro: (registro: RegistroPesada) => void
   onLongPressRegistro: (registro: RegistroPesada) => void
   onPressPending: (pending: ChatPendingMessage) => void
@@ -44,7 +45,7 @@ function verDetalleComparacion(r: RegistroPesada, c: Comparacion) {
   )
 }
 
-export default function ChatBubble({ item, fotos, comparacion, onPressRegistro, onLongPressRegistro, onPressPending, onPressFoto }: Props) {
+export default function ChatBubble({ item, fotos, comparacion, usarTara = true, onPressRegistro, onLongPressRegistro, onPressPending, onPressFoto }: Props) {
   if (item.kind === 'system') {
     return (
       <View style={styles.systemWrap}>
@@ -91,7 +92,9 @@ export default function ChatBubble({ item, fotos, comparacion, onPressRegistro, 
         )}
         <View style={styles.bottomRow}>
           <Text style={styles.peso}>
-            {r.peso_bruto.toFixed(2)} kg bruto · tara {r.tara} · neto {r.peso_neto.toFixed(2)} kg
+            {usarTara
+              ? `${r.peso_bruto.toFixed(2)} kg bruto · tara ${r.tara} · neto ${r.peso_neto.toFixed(2)} kg`
+              : `${r.peso_neto.toFixed(2)} kg`}
           </Text>
           <View style={styles.horaRow}>
             {r.lote_codigo ? (

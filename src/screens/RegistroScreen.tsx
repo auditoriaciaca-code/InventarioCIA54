@@ -19,6 +19,7 @@ import { COLORS, SIZES } from '../constants/theme'
 import { CATEGORIA_MAP, CATEGORIAS } from '../constants/materiales'
 import { Referencia } from '../types'
 import { useSesion } from '../context/SesionContext'
+import { useConfig } from '../context/ConfigContext'
 import { formatDescripcion } from '../utils/format'
 import { useKeyboardHeight } from '../hooks/useKeyboardHeight'
 
@@ -26,6 +27,7 @@ type FotoItem = { uri: string } | null
 
 export default function RegistroScreen() {
   const { sesion } = useSesion()
+  const { usarTara } = useConfig()
   const alturaTeclado = useKeyboardHeight()
   const [materialId, setMaterialId] = useState('')
   const [referencia, setReferencia] = useState<Referencia | null>(null)
@@ -61,7 +63,8 @@ export default function RegistroScreen() {
   const categoriaActual = CATEGORIA_MAP.get(materialId)
 
   const bruto = parseFloat(pesoBruto) || 0
-  const neto = bruto - tara
+  const taraEfectiva = usarTara ? tara : 0
+  const neto = bruto - taraEfectiva
   const netoValido = neto >= 0
 
   const handleSelectContainer = useCallback((t: number, nombre: string) => {
@@ -132,7 +135,7 @@ export default function RegistroScreen() {
         material_id: materialId,
         referencia_codigo: referencia.codigo,
         referencia_descripcion: referencia.descripcion,
-        contenedor, tara, peso_bruto: bruto, peso_neto: neto,
+        contenedor, tara: taraEfectiva, peso_bruto: bruto, peso_neto: neto,
         observaciones, codigo_barras: codigoBarras,
         fotos_count: fotosValidas.length,
         created_at: now, created_by: sesion.nombre_operador,
@@ -285,15 +288,17 @@ export default function RegistroScreen() {
         )}
       </View>
 
-      <View style={styles.card}>
-        <View style={styles.cardTitle}>
-          <View style={styles.iconBox}>
-            <Text style={styles.iconText}>📦</Text>
+      {usarTara && (
+        <View style={styles.card}>
+          <View style={styles.cardTitle}>
+            <View style={styles.iconBox}>
+              <Text style={styles.iconText}>📦</Text>
+            </View>
+            <Text style={styles.cardTitleText}>Tipo de Contenedor</Text>
           </View>
-          <Text style={styles.cardTitleText}>Tipo de Contenedor</Text>
+          <ContainerSelector tara={tara} onSelect={handleSelectContainer} />
         </View>
-        <ContainerSelector tara={tara} onSelect={handleSelectContainer} />
-      </View>
+      )}
 
       <View style={styles.card}>
         <View style={styles.cardTitle}>
@@ -321,7 +326,7 @@ export default function RegistroScreen() {
             <Text style={styles.suffix}>kg</Text>
           </View>
         </View>
-        <WeightDisplay bruto={bruto} tara={tara} neto={neto} />
+        <WeightDisplay bruto={bruto} tara={taraEfectiva} neto={neto} usarTara={usarTara} />
       </View>
 
       <View style={styles.card}>

@@ -74,6 +74,11 @@ export async function initDatabase(): Promise<void> {
       cerrado_at TEXT DEFAULT '',
       PRIMARY KEY (area_id, fecha)
     );
+
+    CREATE TABLE IF NOT EXISTS app_config (
+      clave TEXT PRIMARY KEY,
+      valor TEXT NOT NULL
+    );
   `)
 
   await seedMateriales()

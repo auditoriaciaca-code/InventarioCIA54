@@ -4,7 +4,6 @@ import {
   KeyboardAvoidingView, Alert, Modal, StyleSheet, Animated, PanResponder, Dimensions, Platform
 } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
-import * as ImagePicker from 'expo-image-picker'
 import { randomUUID } from 'expo-crypto'
 import ContainerSelector from '../components/ContainerSelector'
 import MaterialGrid from '../components/MaterialGrid'
@@ -12,20 +11,23 @@ import ReferenciaSelector from '../components/ReferenciaSelector'
 import PhotoViewer from '../components/PhotoViewer'
 import ChatBubble from '../components/ChatBubble'
 import ReferenciaChipsBar from '../components/ReferenciaChipsBar'
-import ChatReferenciaAutocomplete from '../components/ChatReferenciaAutocomplete'
 import ChatPhotoThumb from '../components/ChatPhotoThumb'
 import ComparacionTabla from '../components/ComparacionTabla'
 import QrScanner from '../components/QrScanner'
 import LoteAutocomplete from '../components/LoteAutocomplete'
+import NumericKeypad from '../components/NumericKeypad'
+import CameraCapture from '../components/CameraCapture'
+import MaterialPickerPanel from '../components/MaterialPickerPanel'
+import ScaleReader from '../components/ScaleReader'
 import { getDatabase } from '../services/database'
 import { subirEnSegundoPlano, sincronizarLotes, subirFotosEnSegundoPlano, sincronizarCierresHoy, estaAreaCerradaHoy } from '../services/sync'
 import { nombreArea } from '../constants/areas'
 import { COLORS, SIZES } from '../constants/theme'
 import { CATEGORIA_MAP, MATERIAL_MAP } from '../constants/materiales'
-import { parseMensaje } from '../utils/chatParser'
 import { formatDescripcion } from '../utils/format'
 import { useSesion } from '../context/SesionContext'
 import { useComparaciones } from '../context/ComparacionesContext'
+import { useConfig } from '../context/ConfigContext'
 import { useKeyboardHeight } from '../hooks/useKeyboardHeight'
 import {
   RegistroPesada, Referencia, Foto, ReferenciaFlat,
@@ -43,9 +45,16 @@ const CONTENEDORES = [
 const MAX_FOTOS_POR_MENSAJE = 5
 const screenWidth = Dimensions.get('window').width
 
+// Pager de 3 paneles: Material (0) ← Chat (1) → Doble conteo (2). El chat
+// es el panel de entrada por defecto.
+const POS_MATERIAL = 0
+const POS_CHAT = 1
+const POS_COMPARACION = 2
+
 export default function ChatRegistroScreen() {
   const { sesion } = useSesion()
   const { porRegistro } = useComparaciones()
+  const { usarTara } = useConfig()
   const alturaTeclado = useKeyboardHeight()
 
   const [registros, setRegistros] = useState<RegistroPesada[]>([])
@@ -59,24 +68,30 @@ export default function ChatRegistroScreen() {
   const [pickerVisible, setPickerVisible] = useState(false)
   const [taraPersonalizada, setTaraPersonalizada] = useState('')
 
-  // Arrastre tipo WhatsApp: el chat y la tabla "1 vs 1" viven lado a lado,
-  // un solo valor animado mueve la fila completa según cuánto arrastres.
+  // Arrastre tipo WhatsApp: los 3 paneles viven lado a lado, un solo valor
+  // animado mueve la fila completa según cuánto arrastres.
   const [panelMontado, setPanelMontado] = useState(false)
-  const swipeX = useRef(new Animated.Value(0)).current
-  const basePosRef = useRef(0) // 0 = chat, -screenWidth = tabla
+  const swipeX = useRef(new Animated.Value(-screenWidth * POS_CHAT)).current
+  const paneIndexRef = useRef(POS_CHAT)
 
   const UMBRAL_DISTANCIA = screenWidth * 0.35
   const UMBRAL_VELOCIDAD = 0.5
 
-  function irA(destino: number) {
+  function irA(indice: number) {
+    const destino = -screenWidth * indice
     Animated.timing(swipeX, { toValue: destino, duration: 220, useNativeDriver: true }).start(() => {
-      basePosRef.current = destino
-      if (destino === 0) setPanelMontado(false)
+      paneIndexRef.current = indice
+      if (indice === POS_CHAT) setPanelMontado(false)
     })
   }
 
+  function abrirMaterialPanel() {
+    setPanelMontado(true)
+    irA(POS_MATERIAL)
+  }
+
   function cerrarComparacion() {
-    irA(0)
+    irA(POS_CHAT)
   }
 
   const panResponder = useRef(
@@ -87,15 +102,19 @@ export default function ChatRegistroScreen() {
         setPanelMontado(true)
       },
       onPanResponderMove: (_, g) => {
-        const nuevo = Math.min(0, Math.max(-screenWidth, basePosRef.current + g.dx))
+        const base = -screenWidth * paneIndexRef.current
+        const nuevo = Math.min(0, Math.max(-screenWidth * POS_COMPARACION, base + g.dx))
         swipeX.setValue(nuevo)
       },
       onPanResponderRelease: (_, g) => {
-        const cerrado = basePosRef.current === 0
-        const destino = cerrado
-          ? (g.dx < -UMBRAL_DISTANCIA || g.vx < -UMBRAL_VELOCIDAD ? -screenWidth : 0)
-          : (g.dx > UMBRAL_DISTANCIA || g.vx > UMBRAL_VELOCIDAD ? 0 : -screenWidth)
-        irA(destino)
+        const actual = paneIndexRef.current
+        let indice = actual
+        if (g.dx < -UMBRAL_DISTANCIA || g.vx < -UMBRAL_VELOCIDAD) {
+          indice = Math.min(POS_COMPARACION, actual + 1)
+        } else if (g.dx > UMBRAL_DISTANCIA || g.vx > UMBRAL_VELOCIDAD) {
+          indice = Math.max(POS_MATERIAL, actual - 1)
+        }
+        irA(indice)
       },
     })
   ).current
@@ -103,9 +122,11 @@ export default function ChatRegistroScreen() {
   const [activeReferencia, setActiveReferencia] = useState<ReferenciaFlat | null>(null)
   const [chips, setChips] = useState<ReferenciaFlat[]>([])
 
-  const [inputText, setInputText] = useState('')
+  const [pesoInput, setPesoInput] = useState('')
   const [inputFotos, setInputFotos] = useState<{ uri: string }[]>([])
   const [sending, setSending] = useState(false)
+  const [camaraVisible, setCamaraVisible] = useState(false)
+  const [basculaVisible, setBasculaVisible] = useState(false)
 
   const [loteScannerVisible, setLoteScannerVisible] = useState(false)
   const [inputLote, setInputLote] = useState<string | null>(null)
@@ -383,74 +404,55 @@ export default function ChatRegistroScreen() {
     return true
   }
 
-  async function handleTakePhotoInput() {
+  function handleAbrirCamara() {
     if (inputFotos.length >= MAX_FOTOS_POR_MENSAJE) {
       Alert.alert('Límite de fotos', `Máximo ${MAX_FOTOS_POR_MENSAJE} fotos por pesada`)
       return
     }
-    const permiso = await ImagePicker.requestCameraPermissionsAsync()
-    if (!permiso.granted) {
-      Alert.alert('Permiso denegado', 'Se necesita acceso a la cámara')
-      return
-    }
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.5 })
-    if (!result.canceled && result.assets[0]) {
-      setInputFotos(prev => [...prev, { uri: result.assets[0].uri }])
-    }
+    setCamaraVisible(true)
+  }
+
+  function handleFotoCapturada(uri: string) {
+    setInputFotos(prev => [...prev, { uri }])
   }
 
   function handleQuitarFotoInput(index: number) {
     setInputFotos(prev => prev.filter((_, i) => i !== index))
   }
 
-  async function handleSend() {
-    const texto = inputText.trim()
-    const fotos = inputFotos.map(f => f.uri)
-    if (!texto && fotos.length === 0) return
+  function handleSeleccionarMaterial(ref: ReferenciaFlat) {
+    activarReferencia(ref)
+    irA(POS_CHAT)
+  }
+
+  async function handleEnviarPeso() {
+    const pesoBruto = parseFloat(pesoInput)
+    if (!(pesoBruto > 0)) return
+
+    if (!activeReferencia) {
+      abrirMaterialPanel()
+      return
+    }
 
     setSending(true)
     try {
-      const parsed = parseMensaje(texto)
-
+      const fotos = inputFotos.map(f => f.uri)
       const lote = inputLote || undefined
-
-      if (parsed.tipo === 'referencia') {
-        const refFlat = buildRefFlat(parsed.categoriaId, parsed.referencia)
-        if (parsed.pesoBruto !== undefined) {
-          const ok = await insertarRegistro(refFlat, parsed.pesoBruto, parsed.taraOverride ?? tara, fotos, lote)
-          if (!ok) agregarPendiente(texto, parsed.pesoBruto, parsed.taraOverride, fotos, lote)
-        } else {
-          activarReferencia(refFlat)
-          agregarSistema(`🔀 Activa: ${refFlat.codigo} · ${formatDescripcion(refFlat.descripcion)}`)
-        }
-      } else if (parsed.tipo === 'peso') {
-        if (activeReferencia) {
-          const ok = await insertarRegistro(activeReferencia, parsed.pesoBruto, parsed.taraOverride ?? tara, fotos, lote)
-          if (!ok) agregarPendiente(texto, parsed.pesoBruto, parsed.taraOverride, fotos, lote)
-        } else {
-          agregarPendiente(texto, parsed.pesoBruto, parsed.taraOverride, fotos, lote)
-        }
-      } else {
-        agregarPendiente(parsed.textoOriginal, parsed.pesoBrutoDetectado, parsed.taraOverrideDetectado, fotos, lote)
-      }
+      const taraEfectiva = usarTara ? tara : 0
+      const ok = await insertarRegistro(activeReferencia, pesoBruto, taraEfectiva, fotos, lote)
+      if (!ok) agregarPendiente(pesoBruto.toString(), pesoBruto, taraEfectiva, fotos, lote)
     } finally {
-      setInputText('')
+      setPesoInput('')
       setInputFotos([])
       quitarLoteInput()
       setSending(false)
     }
   }
 
-  function handleSeleccionarSugerencia(ref: ReferenciaFlat) {
-    activarReferencia(ref)
-    agregarSistema(`🔀 Activa: ${ref.codigo} · ${formatDescripcion(ref.descripcion)}`)
-    setInputText('')
-  }
-
   function handleEditRegistro(r: RegistroPesada) {
     setEditando(r)
     setEditPesoBruto(r.peso_bruto.toString())
-    setEditTara(r.tara.toString())
+    setEditTara((usarTara ? r.tara : 0).toString())
     setEditContenedor(r.contenedor)
     setEditObservaciones(r.observaciones)
     setEditMaterialId(r.material_id)
@@ -461,7 +463,7 @@ export default function ChatRegistroScreen() {
   async function handleSaveEdit() {
     if (!editando) return
     const pb = parseFloat(editPesoBruto)
-    const t = parseFloat(editTara)
+    const t = usarTara ? parseFloat(editTara) : 0
     if (isNaN(pb) || pb <= 0) { Alert.alert('Error', 'Peso bruto inválido'); return }
     if (isNaN(t) || t < 0) { Alert.alert('Error', 'Tara inválida'); return }
     if (await estaAreaCerradaHoy(editando.area_id || sesion?.area_id || '')) {
@@ -525,7 +527,7 @@ export default function ChatRegistroScreen() {
     setCorrMaterialId('')
     setCorrReferencia(null)
     setCorrPeso(p.pesoBrutoDetectado?.toString() ?? '')
-    setCorrTara((p.taraOverrideDetectado ?? tara).toString())
+    setCorrTara((usarTara ? (p.taraOverrideDetectado ?? tara) : 0).toString())
     setCorrLote(p.loteCodigo || '')
   }
 
@@ -536,7 +538,7 @@ export default function ChatRegistroScreen() {
       return
     }
     const pb = parseFloat(corrPeso)
-    const t = parseFloat(corrTara)
+    const t = usarTara ? parseFloat(corrTara) : 0
     if (isNaN(pb) || pb <= 0) { Alert.alert('Error', 'Peso bruto inválido'); return }
     if (isNaN(t) || t < 0) { Alert.alert('Error', 'Tara inválida'); return }
 
@@ -568,8 +570,6 @@ export default function ChatRegistroScreen() {
   }, [items.length])
 
   const totalNeto = registros.reduce((s, r) => s + r.peso_neto, 0)
-  const previewParsed = inputText.trim().length >= 2 ? parseMensaje(inputText) : null
-  const mostrarAutocomplete = !!previewParsed && previewParsed.tipo !== 'peso'
 
   if (!sesion) {
     return (
@@ -579,7 +579,7 @@ export default function ChatRegistroScreen() {
     )
   }
 
-  if (!contenedorConfirmado) {
+  if (usarTara && !contenedorConfirmado) {
     return (
       <View style={styles.wrapper}>
         <ScrollView contentContainerStyle={styles.content}>
@@ -599,6 +599,11 @@ export default function ChatRegistroScreen() {
   return (
     <View style={styles.pagerOverflow} {...panResponder.panHandlers}>
       <Animated.View style={[styles.pagerRow, { transform: [{ translateX: swipeX }] }]}>
+      <View style={styles.pagerPane}>
+        {panelMontado && (
+          <MaterialPickerPanel recientes={chips} activo={activeReferencia} onSelect={handleSeleccionarMaterial} />
+        )}
+      </View>
       <KeyboardAvoidingView
         style={[
           styles.wrapper,
@@ -620,6 +625,7 @@ export default function ChatRegistroScreen() {
             item={item}
             fotos={item.kind === 'registro' ? fotosPorRegistro.get(item.registro.id) : undefined}
             comparacion={item.kind === 'registro' ? porRegistro[item.registro.id] : undefined}
+            usarTara={usarTara}
             onPressRegistro={handleEditRegistro}
             onLongPressRegistro={handleLongPressRegistro}
             onPressPending={handleAbrirCorreccion}
@@ -636,15 +642,34 @@ export default function ChatRegistroScreen() {
       />
 
       <View style={styles.footer}>
-        <View style={styles.footerRow}>
-          <Text style={styles.footerContenedor}>📦 {contenedor} · tara {tara} kg</Text>
-          <TouchableOpacity onPress={() => setPickerVisible(true)}>
-            <Text style={styles.footerCambiar}>cambiar</Text>
-          </TouchableOpacity>
-        </View>
+        {usarTara && (
+          <View style={styles.footerRow}>
+            <Text style={styles.footerContenedor}>📦 {contenedor} · tara {tara} kg</Text>
+            <TouchableOpacity onPress={() => setPickerVisible(true)}>
+              <Text style={styles.footerCambiar}>cambiar</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <Text style={styles.footerText}>
           {registros.length} registro(s) · {totalNeto.toLocaleString('es-MX', { minimumFractionDigits: 2 })} kg neto
         </Text>
+      </View>
+
+      <View style={styles.materialBar}>
+        {activeReferencia ? (
+          <View style={styles.materialBarInfo}>
+            <Text style={styles.materialBarIcon}>{activeReferencia.icono}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.materialBarCodigo} numberOfLines={1}>{activeReferencia.codigo}</Text>
+              <Text style={styles.materialBarDesc} numberOfLines={1}>{formatDescripcion(activeReferencia.descripcion)}</Text>
+            </View>
+          </View>
+        ) : (
+          <Text style={styles.materialBarVacio}>Sin material seleccionado</Text>
+        )}
+        <TouchableOpacity style={styles.materialBarBtn} onPress={abrirMaterialPanel} activeOpacity={0.7}>
+          <Text style={styles.materialBarBtnText}>🔀 Cambiar</Text>
+        </TouchableOpacity>
       </View>
 
       {inputFotos.length > 0 && (
@@ -679,43 +704,48 @@ export default function ChatRegistroScreen() {
         </View>
       )}
 
-      <View style={styles.composerWrap}>
-        {mostrarAutocomplete && (
-          <ChatReferenciaAutocomplete query={inputText} onSelect={handleSeleccionarSugerencia} />
-        )}
-        <View style={styles.composerRow}>
-          <TouchableOpacity style={styles.photoBtn} onPress={handleTakePhotoInput} activeOpacity={0.7}>
-            <Text style={styles.photoBtnIcon}>📷</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.photoBtn}
-            onPress={() => setLoteScannerVisible(true)}
-            onLongPress={abrirModalLote}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.photoBtnIcon}>🏷️</Text>
-          </TouchableOpacity>
-          <TextInput
-            style={styles.composerInput}
-            placeholder={activeReferencia ? `${activeReferencia.codigo} · escribe el peso` : 'Escribe un material o código...'}
-            placeholderTextColor={COLORS.textLight}
-            value={inputText}
-            onChangeText={setInputText}
-            onSubmitEditing={handleSend}
-            returnKeyType="send"
-          />
-          <TouchableOpacity
-            style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
-            onPress={handleSend}
-            disabled={sending}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.sendBtnText}>➤</Text>
-          </TouchableOpacity>
-        </View>
+      <View style={styles.quickActionsRow}>
+        <TouchableOpacity style={styles.quickBtn} onPress={handleAbrirCamara} activeOpacity={0.7}>
+          <Text style={styles.quickBtnIcon}>📷</Text>
+          <Text style={styles.quickBtnLabel}>Foto</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.quickBtn} onPress={() => setBasculaVisible(true)} activeOpacity={0.7}>
+          <Text style={styles.quickBtnIcon}>⚖️</Text>
+          <Text style={styles.quickBtnLabel}>Báscula</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.quickBtn}
+          onPress={() => setLoteScannerVisible(true)}
+          onLongPress={abrirModalLote}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.quickBtnIcon}>🏷️</Text>
+          <Text style={styles.quickBtnLabel}>Lote</Text>
+        </TouchableOpacity>
       </View>
 
+      <NumericKeypad
+        value={pesoInput}
+        onChange={setPesoInput}
+        onSubmit={handleEnviarPeso}
+        submitDisabled={sending || !(parseFloat(pesoInput) > 0)}
+        submitLabel={activeReferencia ? `Enviar · ${activeReferencia.codigo}` : 'Elegir material'}
+      />
+
       <PhotoViewer visible={fotosVisible} fotos={fotosActuales} onClose={() => setFotosVisible(false)} />
+
+      <CameraCapture
+        visible={camaraVisible}
+        onClose={() => setCamaraVisible(false)}
+        onCapture={handleFotoCapturada}
+      />
+
+      <Modal visible={basculaVisible} animationType="slide" onRequestClose={() => setBasculaVisible(false)}>
+        <ScaleReader
+          onClose={() => setBasculaVisible(false)}
+          onWeight={kg => { setPesoInput(kg.toString()); setBasculaVisible(false) }}
+        />
+      </Modal>
 
       <QrScanner
         visible={loteScannerVisible}
@@ -827,14 +857,18 @@ export default function ChatRegistroScreen() {
                   <Text style={styles.label}>Peso Bruto (kg) *</Text>
                   <TextInput style={styles.input} value={editPesoBruto} onChangeText={setEditPesoBruto} keyboardType="decimal-pad" />
                 </View>
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Tara (kg) *</Text>
-                  <TextInput style={styles.input} value={editTara} onChangeText={setEditTara} keyboardType="decimal-pad" />
-                </View>
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Contenedor</Text>
-                  <TextInput style={styles.input} value={editContenedor} onChangeText={setEditContenedor} />
-                </View>
+                {usarTara && (
+                  <>
+                    <View style={styles.formGroup}>
+                      <Text style={styles.label}>Tara (kg) *</Text>
+                      <TextInput style={styles.input} value={editTara} onChangeText={setEditTara} keyboardType="decimal-pad" />
+                    </View>
+                    <View style={styles.formGroup}>
+                      <Text style={styles.label}>Contenedor</Text>
+                      <TextInput style={styles.input} value={editContenedor} onChangeText={setEditContenedor} />
+                    </View>
+                  </>
+                )}
                 <View style={styles.formGroup}>
                   <Text style={styles.label}>Observaciones</Text>
                   <TextInput style={[styles.input, styles.textArea]} value={editObservaciones} onChangeText={setEditObservaciones} multiline numberOfLines={2} />
@@ -892,10 +926,12 @@ export default function ChatRegistroScreen() {
                   <Text style={styles.label}>Peso Bruto (kg) *</Text>
                   <TextInput style={styles.input} value={corrPeso} onChangeText={setCorrPeso} keyboardType="decimal-pad" />
                 </View>
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Tara (kg) *</Text>
-                  <TextInput style={styles.input} value={corrTara} onChangeText={setCorrTara} keyboardType="decimal-pad" />
-                </View>
+                {usarTara && (
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>Tara (kg) *</Text>
+                    <TextInput style={styles.input} value={corrTara} onChangeText={setCorrTara} keyboardType="decimal-pad" />
+                  </View>
+                )}
                 <View style={styles.formGroup}>
                   <Text style={styles.label}>Lote</Text>
                   <TextInput
@@ -944,7 +980,7 @@ const styles = StyleSheet.create({
   pagerRow: {
     flex: 1,
     flexDirection: 'row',
-    width: screenWidth * 2,
+    width: screenWidth * 3,
   },
   pagerPane: {
     width: screenWidth,
@@ -1183,57 +1219,75 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.text,
   },
-  composerWrap: {
-    position: 'relative',
+  materialBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     backgroundColor: COLORS.card,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
   },
-  composerRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
-    padding: 10,
-  },
-  photoBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: COLORS.bg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photoBtnIcon: {
-    fontSize: 18,
-  },
-  composerInput: {
+  materialBarInfo: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  materialBarIcon: {
+    fontSize: 22,
+  },
+  materialBarCodigo: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: COLORS.primary,
+  },
+  materialBarDesc: {
+    fontSize: 12,
+    color: COLORS.textLight,
+  },
+  materialBarVacio: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.textLight,
+    fontStyle: 'italic',
+  },
+  materialBarBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: SIZES.radius,
+  },
+  materialBarBtnText: {
+    color: 'white',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  quickActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    backgroundColor: COLORS.card,
+  },
+  quickBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: SIZES.radius,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 15,
     backgroundColor: COLORS.bg,
-    maxHeight: 100,
   },
-  sendBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendBtnDisabled: {
-    opacity: 0.5,
-  },
-  sendBtnText: {
-    color: 'white',
+  quickBtnIcon: {
     fontSize: 18,
-    fontWeight: '700',
+  },
+  quickBtnLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.textLight,
+    marginTop: 2,
   },
   modalOverlay: {
     flex: 1,

@@ -8,6 +8,7 @@ import { MATERIAL_MAP } from '../constants/materiales'
 import { getDatabase } from '../services/database'
 import { COLORS, SIZES } from '../constants/theme'
 import { useSesion } from '../context/SesionContext'
+import { useConfig } from '../context/ConfigContext'
 import { File, Paths } from 'expo-file-system'
 import DetalleMaterial from '../components/DetalleMaterial'
 import { finalizarInventarioRemoto } from '../services/supabase'
@@ -17,6 +18,7 @@ import { nombreArea } from '../constants/areas'
 
 export default function ResumenScreen() {
   const { sesion } = useSesion()
+  const { usarTara, setUsarTara } = useConfig()
   const [registros, setRegistros] = useState<RegistroPesada[]>([])
   const [modoOffline, setModoOffline] = useState(true)
   const [sonido, setSonido] = useState(true)
@@ -328,6 +330,7 @@ export default function ResumenScreen() {
           <Text style={styles.cardTitleText}>Configuración y Exportación</Text>
         </View>
 
+        <ToggleRow label="Usar tara" desc="Restar peso de contenedor al pesar" value={usarTara} onToggle={() => setUsarTara(!usarTara)} />
         <ToggleRow label="Modo Offline" desc="Guardar localmente sin internet" value={modoOffline} onToggle={() => setModoOffline(v => !v)} />
         <ToggleRow label="Sonido al registrar" desc="Beep de confirmación" value={sonido} onToggle={() => setSonido(v => !v)} />
         <ToggleRow label="Auto-sincronización" desc="Subir automáticamente" value={autoSync} onToggle={() => setAutoSync(v => !v)} />

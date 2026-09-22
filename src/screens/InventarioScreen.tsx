@@ -11,9 +11,11 @@ import { getDatabase } from '../services/database'
 import { COLORS, SIZES } from '../constants/theme'
 import { sincronizar } from '../services/sync'
 import { useSesion } from '../context/SesionContext'
+import { useConfig } from '../context/ConfigContext'
 
 export default function InventarioScreen() {
   const { sesion } = useSesion()
+  const { usarTara } = useConfig()
   const [registros, setRegistros] = useState<RegistroPesada[]>([])
   const [filtro, setFiltro] = useState<string | null>(null)
   const [busquedaPeso, setBusquedaPeso] = useState('')
@@ -70,7 +72,7 @@ export default function InventarioScreen() {
     if (!reg) return
     setEditando(reg)
     setEditPesoBruto(reg.peso_bruto.toString())
-    setEditTara(reg.tara.toString())
+    setEditTara((usarTara ? reg.tara : 0).toString())
     setEditContenedor(reg.contenedor)
     setEditObservaciones(reg.observaciones)
     setEditMaterialId(reg.material_id)
@@ -80,7 +82,7 @@ export default function InventarioScreen() {
   async function handleSaveEdit() {
     if (!editando) return
     const pb = parseFloat(editPesoBruto)
-    const t = parseFloat(editTara)
+    const t = usarTara ? parseFloat(editTara) : 0
     if (isNaN(pb) || pb <= 0) { Alert.alert('Error', 'Peso bruto inválido'); return }
     if (isNaN(t) || t < 0) { Alert.alert('Error', 'Tara inválida'); return }
     try {
@@ -273,14 +275,18 @@ export default function InventarioScreen() {
                   <Text style={styles.label}>Peso Bruto (kg) *</Text>
                   <TextInput style={styles.input} value={editPesoBruto} onChangeText={setEditPesoBruto} keyboardType="decimal-pad" />
                 </View>
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Tara (kg) *</Text>
-                  <TextInput style={styles.input} value={editTara} onChangeText={setEditTara} keyboardType="decimal-pad" />
-                </View>
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Contenedor</Text>
-                  <TextInput style={styles.input} value={editContenedor} onChangeText={setEditContenedor} />
-                </View>
+                {usarTara && (
+                  <>
+                    <View style={styles.formGroup}>
+                      <Text style={styles.label}>Tara (kg) *</Text>
+                      <TextInput style={styles.input} value={editTara} onChangeText={setEditTara} keyboardType="decimal-pad" />
+                    </View>
+                    <View style={styles.formGroup}>
+                      <Text style={styles.label}>Contenedor</Text>
+                      <TextInput style={styles.input} value={editContenedor} onChangeText={setEditContenedor} />
+                    </View>
+                  </>
+                )}
                 <View style={styles.formGroup}>
                   <Text style={styles.label}>Observaciones</Text>
                   <TextInput style={[styles.input, styles.textArea]} value={editObservaciones} onChangeText={setEditObservaciones} multiline numberOfLines={2} />

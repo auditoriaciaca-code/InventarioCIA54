@@ -5,9 +5,10 @@ interface Props {
   bruto: number
   tara: number
   neto: number
+  usarTara?: boolean
 }
 
-export default function WeightDisplay({ bruto, tara, neto }: Props) {
+export default function WeightDisplay({ bruto, tara, neto, usarTara = true }: Props) {
   const isNegative = neto < 0
   return (
     <View style={styles.container}>
@@ -16,22 +17,24 @@ export default function WeightDisplay({ bruto, tara, neto }: Props) {
         {isNegative ? '0.00' : neto.toFixed(2)}
       </Text>
       <Text style={styles.unit}>kg</Text>
-      <View style={styles.breakdown}>
-        <View style={styles.item}>
-          <Text style={styles.breakLabel}>Bruto</Text>
-          <Text style={styles.breakValue}>{bruto.toFixed(2)}</Text>
+      {usarTara && (
+        <View style={styles.breakdown}>
+          <View style={styles.item}>
+            <Text style={styles.breakLabel}>Bruto</Text>
+            <Text style={styles.breakValue}>{bruto.toFixed(2)}</Text>
+          </View>
+          <View style={styles.item}>
+            <Text style={styles.breakLabel}>Tara</Text>
+            <Text style={[styles.breakValue, { color: COLORS.danger }]}>-{tara.toFixed(2)}</Text>
+          </View>
+          <View style={styles.item}>
+            <Text style={styles.breakLabel}>Neto</Text>
+            <Text style={[styles.breakValue, isNegative && { color: COLORS.danger }]}>
+              {isNegative ? '0.00' : neto.toFixed(2)}
+            </Text>
+          </View>
         </View>
-        <View style={styles.item}>
-          <Text style={styles.breakLabel}>Tara</Text>
-          <Text style={[styles.breakValue, { color: COLORS.danger }]}>-{tara.toFixed(2)}</Text>
-        </View>
-        <View style={styles.item}>
-          <Text style={styles.breakLabel}>Neto</Text>
-          <Text style={[styles.breakValue, isNegative && { color: COLORS.danger }]}>
-            {isNegative ? '0.00' : neto.toFixed(2)}
-          </Text>
-        </View>
-      </View>
+      )}
       {isNegative && (
         <View style={styles.alert}>
           <Text style={styles.alertText}>⚠️ El peso neto es negativo. Verifique los datos.</Text>
