@@ -26,6 +26,7 @@ import { parseMensaje } from '../utils/chatParser'
 import { formatDescripcion } from '../utils/format'
 import { useSesion } from '../context/SesionContext'
 import { useComparaciones } from '../context/ComparacionesContext'
+import { useKeyboardHeight } from '../hooks/useKeyboardHeight'
 import {
   RegistroPesada, Referencia, Foto, ReferenciaFlat,
   ChatPendingMessage, ChatListItem, Lote
@@ -45,6 +46,7 @@ const screenWidth = Dimensions.get('window').width
 export default function ChatRegistroScreen() {
   const { sesion } = useSesion()
   const { porRegistro } = useComparaciones()
+  const alturaTeclado = useKeyboardHeight()
 
   const [registros, setRegistros] = useState<RegistroPesada[]>([])
   const [pendientes, setPendientes] = useState<ChatPendingMessage[]>([])
@@ -598,7 +600,11 @@ export default function ChatRegistroScreen() {
     <View style={styles.pagerOverflow} {...panResponder.panHandlers}>
       <Animated.View style={[styles.pagerRow, { transform: [{ translateX: swipeX }] }]}>
       <KeyboardAvoidingView
-        style={[styles.wrapper, styles.pagerPane]}
+        style={[
+          styles.wrapper,
+          styles.pagerPane,
+          Platform.OS === 'android' && { paddingBottom: alturaTeclado },
+        ]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
       <ReferenciaChipsBar chips={chips} activo={activeReferencia} onSelectChip={activarReferencia} />

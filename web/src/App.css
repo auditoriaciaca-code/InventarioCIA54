@@ -385,6 +385,29 @@ tbody tr:nth-child(even) {
   gap: 10px;
 }
 
+.operador-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.operador-tab {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text-light);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.operador-tab.active {
+  background: #1a5f2a;
+  color: #fff;
+  border-color: #1a5f2a;
+}
+
 .hoja-preview {
   background: #fff;
   color: #222;

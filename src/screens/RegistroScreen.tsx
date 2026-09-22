@@ -20,11 +20,13 @@ import { CATEGORIA_MAP, CATEGORIAS } from '../constants/materiales'
 import { Referencia } from '../types'
 import { useSesion } from '../context/SesionContext'
 import { formatDescripcion } from '../utils/format'
+import { useKeyboardHeight } from '../hooks/useKeyboardHeight'
 
 type FotoItem = { uri: string } | null
 
 export default function RegistroScreen() {
   const { sesion } = useSesion()
+  const alturaTeclado = useKeyboardHeight()
   const [materialId, setMaterialId] = useState('')
   const [referencia, setReferencia] = useState<Referencia | null>(null)
   const [tara, setTara] = useState(2)
@@ -232,7 +234,10 @@ export default function RegistroScreen() {
           <Text style={styles.barcodeBadgeText}>📱 {codigoBarras}</Text>
         </View>
       ) : null}
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView
+        style={[{ flex: 1 }, Platform.OS === 'android' && { paddingBottom: alturaTeclado }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <ScrollView
         ref={scrollRef}
         style={styles.container}

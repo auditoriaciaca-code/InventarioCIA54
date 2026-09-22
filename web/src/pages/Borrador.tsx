@@ -12,6 +12,7 @@ export default function Borrador() {
   const [areaId, setAreaId] = useState('')
   const [registros, setRegistros] = useState<RegistroPesada[]>([])
   const [cargando, setCargando] = useState(true)
+  const [operadorActivo, setOperadorActivo] = useState<string | null>(null)
 
   useEffect(() => {
     let activo = true
@@ -38,22 +39,44 @@ export default function Borrador() {
     }
   }, [fecha, areaId])
 
-  const grupos = useMemo(() => agruparPorReferencia(registros), [registros])
-  const totalNeto = useMemo(() => grupos.reduce((s, g) => s + g.pesos.reduce((a, b) => a + b, 0), 0), [grupos])
-  const operadores = useMemo(() => {
-    const nombres = Array.from(new Set(registros.map(r => r.created_by).filter(Boolean))) as string[]
-    return nombres.length > 0 ? nombres.join(', ') : '—'
+  const operadoresLista = useMemo(() => {
+    const vistos = new Set<string>()
+    const lista: string[] = []
+    for (const r of registros) {
+      if (r.created_by && !vistos.has(r.created_by)) {
+        vistos.add(r.created_by)
+        lista.push(r.created_by)
+      }
+    }
+    return lista
   }, [registros])
+
+  useEffect(() => {
+    if (operadoresLista.length === 0) {
+      setOperadorActivo(null)
+    } else if (!operadorActivo || !operadoresLista.includes(operadorActivo)) {
+      setOperadorActivo(operadoresLista[0])
+    }
+  }, [operadoresLista])
+
+  const registrosOperador = useMemo(
+    () => (operadorActivo ? registros.filter(r => r.created_by === operadorActivo) : []),
+    [registros, operadorActivo]
+  )
+
+  const grupos = useMemo(() => agruparPorReferencia(registrosOperador), [registrosOperador])
+  const totalNeto = useMemo(() => grupos.reduce((s, g) => s + g.pesos.reduce((a, b) => a + b, 0), 0), [grupos])
   const zona = areaId ? nombreArea(areaId) : 'Todas las áreas'
 
   function handleDescargar() {
+    if (!operadorActivo) return
     const xls = generarXls({
       fecha: new Date(`${fecha}T12:00:00`),
-      operadores,
+      operadores: operadorActivo,
       area: zona,
       grupos,
     })
-    descargarXls(xls, `inventario_${fecha}${areaId ? '_' + areaId : ''}.xls`)
+    descargarXls(xls, `inventario_${fecha}${areaId ? '_' + areaId : ''}_${operadorActivo}.xls`)
   }
 
   return (
@@ -74,15 +97,30 @@ export default function Borrador() {
             ))}
           </select>
         </label>
-        <button className="btn-primario" onClick={handleDescargar} disabled={cargando || registros.length === 0}>
+        <button className="btn-primario" onClick={handleDescargar} disabled={cargando || !operadorActivo}>
           📥 Generar Excel definitivo
         </button>
       </div>
 
       <p className="ayuda">
         Vista previa de cómo quedará la plantilla. Nada se descarga ni se comparte hasta que
-        presiones «Generar Excel definitivo».
+        presiones «Generar Excel definitivo». Cada operador tiene su propia hoja — el doble conteo
+        ciego queda separado, no mezclado.
       </p>
+
+      {operadoresLista.length > 0 && (
+        <div className="operador-tabs">
+          {operadoresLista.map(op => (
+            <button
+              key={op}
+              className={`operador-tab${op === operadorActivo ? ' active' : ''}`}
+              onClick={() => setOperadorActivo(op)}
+            >
+              👤 {op}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="hoja-preview">
         <div className="hoja-fila hoja-cabecera">
@@ -93,7 +131,7 @@ export default function Borrador() {
         </div>
         <div className="hoja-fila">BODEGA _____________</div>
         <div className="hoja-fila">
-          <span>REALIZADO POR: {operadores}</span>
+          <span>REALIZADO POR: {operadorActivo || '—'}</span>
           <span>GRUPO No.</span>
         </div>
         <div className="hoja-fila">
