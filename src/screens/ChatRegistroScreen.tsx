@@ -667,6 +667,20 @@ export default function ChatRegistroScreen() {
         ) : (
           <Text style={styles.materialBarVacio}>Sin material seleccionado</Text>
         )}
+        <TouchableOpacity style={styles.quickIconBtn} onPress={handleAbrirCamara} activeOpacity={0.7}>
+          <Text style={styles.quickIconBtnText}>📷</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.quickIconBtn} onPress={() => setBasculaVisible(true)} activeOpacity={0.7}>
+          <Text style={styles.quickIconBtnText}>⚖️</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.quickIconBtn}
+          onPress={() => setLoteScannerVisible(true)}
+          onLongPress={abrirModalLote}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.quickIconBtnText}>🏷️</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.materialBarBtn} onPress={abrirMaterialPanel} activeOpacity={0.7}>
           <Text style={styles.materialBarBtnText}>🔀 Cambiar</Text>
         </TouchableOpacity>
@@ -703,26 +717,6 @@ export default function ChatRegistroScreen() {
           </View>
         </View>
       )}
-
-      <View style={styles.quickActionsRow}>
-        <TouchableOpacity style={styles.quickBtn} onPress={handleAbrirCamara} activeOpacity={0.7}>
-          <Text style={styles.quickBtnIcon}>📷</Text>
-          <Text style={styles.quickBtnLabel}>Foto</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.quickBtn} onPress={() => setBasculaVisible(true)} activeOpacity={0.7}>
-          <Text style={styles.quickBtnIcon}>⚖️</Text>
-          <Text style={styles.quickBtnLabel}>Báscula</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.quickBtn}
-          onPress={() => setLoteScannerVisible(true)}
-          onLongPress={abrirModalLote}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.quickBtnIcon}>🏷️</Text>
-          <Text style={styles.quickBtnLabel}>Lote</Text>
-        </TouchableOpacity>
-      </View>
 
       <NumericKeypad
         value={pesoInput}
@@ -1034,7 +1028,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   footer: {
-    paddingVertical: 8,
+    paddingVertical: 4,
     paddingHorizontal: 15,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
@@ -1222,9 +1216,9 @@ const styles = StyleSheet.create({
   materialBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     backgroundColor: COLORS.card,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
@@ -1233,61 +1227,49 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   materialBarIcon: {
-    fontSize: 22,
+    fontSize: 18,
   },
   materialBarCodigo: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '800',
     color: COLORS.primary,
   },
   materialBarDesc: {
-    fontSize: 12,
+    fontSize: 11,
     color: COLORS.textLight,
   },
   materialBarVacio: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12,
     color: COLORS.textLight,
     fontStyle: 'italic',
   },
   materialBarBtn: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: SIZES.radius,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: SIZES.radiusSm,
   },
   materialBarBtnText: {
     color: 'white',
     fontWeight: '700',
-    fontSize: 13,
+    fontSize: 12,
   },
-  quickActionsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    backgroundColor: COLORS.card,
-  },
-  quickBtn: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 8,
-    borderRadius: SIZES.radius,
+  quickIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: SIZES.radiusSm,
     borderWidth: 1,
     borderColor: COLORS.border,
     backgroundColor: COLORS.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  quickBtnIcon: {
-    fontSize: 18,
-  },
-  quickBtnLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.textLight,
-    marginTop: 2,
+  quickIconBtnText: {
+    fontSize: 15,
   },
   modalOverlay: {
     flex: 1,

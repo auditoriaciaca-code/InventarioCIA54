@@ -54,7 +54,7 @@ export default function NumericKeypad({ value, onChange, onSubmit, submitLabel =
 
 const styles = StyleSheet.create({
   container: {
-    padding: 12,
+    padding: 8,
     backgroundColor: COLORS.card,
   },
   pantalla: {
@@ -62,34 +62,34 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     justifyContent: 'center',
     backgroundColor: COLORS.bg,
-    borderRadius: SIZES.radius,
+    borderRadius: SIZES.radiusSm,
     borderWidth: 1,
     borderColor: COLORS.border,
-    paddingVertical: 14,
-    marginBottom: 10,
+    paddingVertical: 6,
+    marginBottom: 6,
   },
   pantallaValor: {
-    fontSize: 40,
+    fontSize: 24,
     fontWeight: '800',
     color: COLORS.text,
     letterSpacing: 1,
   },
   pantallaUnidad: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '700',
     color: COLORS.textLight,
-    marginLeft: 6,
+    marginLeft: 5,
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 5,
   },
   tecla: {
-    width: '31.5%',
-    aspectRatio: 1.7,
+    width: '32%',
+    aspectRatio: 2.8,
     backgroundColor: COLORS.bg,
-    borderRadius: SIZES.radius,
+    borderRadius: SIZES.radiusSm,
     borderWidth: 1,
     borderColor: COLORS.border,
     alignItems: 'center',
@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(231,76,60,0.3)',
   },
   teclaTexto: {
-    fontSize: 24,
+    fontSize: 17,
     fontWeight: '700',
     color: COLORS.text,
   },
@@ -108,10 +108,10 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
   },
   enviarBtn: {
-    marginTop: 10,
+    marginTop: 6,
     backgroundColor: COLORS.primary,
-    borderRadius: SIZES.radius,
-    paddingVertical: 16,
+    borderRadius: SIZES.radiusSm,
+    paddingVertical: 10,
     alignItems: 'center',
   },
   enviarBtnDisabled: {
@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
   },
   enviarBtnText: {
     color: 'white',
-    fontSize: 17,
+    fontSize: 14,
     fontWeight: '800',
   },
 })
