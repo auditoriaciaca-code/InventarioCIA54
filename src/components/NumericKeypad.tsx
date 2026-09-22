@@ -91,7 +91,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     paddingVertical: 6,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   pantallaValor: {
     fontSize: 24,
@@ -108,11 +108,11 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 5,
+    gap: 8,
   },
   tecla: {
-    width: '32%',
-    aspectRatio: 2.8,
+    width: '31%',
+    aspectRatio: 1.9,
     backgroundColor: COLORS.bg,
     borderRadius: SIZES.radiusSm,
     borderWidth: 1,
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(231,76,60,0.3)',
   },
   teclaTexto: {
-    fontSize: 17,
+    fontSize: 22,
     fontWeight: '700',
     color: COLORS.text,
   },
@@ -133,10 +133,10 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
   },
   enviarBtn: {
-    marginTop: 6,
+    marginTop: 8,
     backgroundColor: COLORS.primary,
     borderRadius: SIZES.radiusSm,
-    paddingVertical: 10,
+    paddingVertical: 13,
     alignItems: 'center',
   },
   enviarBtnDisabled: {
