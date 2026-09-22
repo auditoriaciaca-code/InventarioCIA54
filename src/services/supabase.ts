@@ -84,19 +84,24 @@ export async function subirSesionInmediato(sesion: any): Promise<boolean> {
 }
 
 /**
- * Operadores que siguen "ocupando" cada área hoy (su sesión más reciente en
- * esa área todavía no fue liberada con el botón "Salir"). Si falla (sin
- * señal), devuelve {} y el selector simplemente no bloquea ni muestra nada
- * — no debe romper el flujo offline-first.
+ * Operadores que siguen "ocupando" cada área ahora mismo (su sesión más
+ * reciente en esa área todavía no fue liberada con el botón "Salir").
+ *
+ * Ojo: se filtra por liberada_at, NO por "creada hoy" — una sesión que
+ * arrancó ayer y a la que nunca le tocaron "Salir" sigue ocupando la sala
+ * hoy (el candado es a propósito indefinido, ver AGENTS.md). Filtrar por
+ * fecha de creación dejaba invisibles a esos operadores en el lobby aunque
+ * siguieran activos.
+ *
+ * Si falla (sin señal), devuelve {} y el selector simplemente no bloquea
+ * ni muestra nada — no debe romper el flujo offline-first.
  */
 export async function obtenerOperadoresHoyPorArea(): Promise<Record<string, string[]>> {
   try {
-    const inicio = new Date()
-    inicio.setHours(0, 0, 0, 0)
     const { data, error } = await supabase
       .from('inv_sesiones')
       .select('area_id, nombre_operador, created_at, liberada_at')
-      .gte('fecha', inicio.toISOString())
+      .is('liberada_at', null)
       .order('created_at', { ascending: true })
     if (error || !data) return {}
 
@@ -111,7 +116,6 @@ export async function obtenerOperadoresHoyPorArea(): Promise<Record<string, stri
 
     const mapa: Record<string, string[]> = {}
     for (const row of ultimaPorClave.values()) {
-      if (row.liberada_at) continue // ya salió, no ocupa la sala
       const lista = mapa[row.area_id] || (mapa[row.area_id] = [])
       lista.push(row.nombre_operador)
     }
