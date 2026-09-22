@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
   },
   enviarBtn: {
-    marginTop: 8,
+    marginTop: 4,
     backgroundColor: COLORS.primary,
     borderRadius: SIZES.radiusSm,
     paddingVertical: 13,
