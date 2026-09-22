@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, ScrollView,
-  KeyboardAvoidingView, Alert, Modal, StyleSheet, Animated, PanResponder, Dimensions
+  KeyboardAvoidingView, Alert, Modal, StyleSheet, Animated, PanResponder, Dimensions, Platform
 } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
 import * as ImagePicker from 'expo-image-picker'
@@ -597,7 +597,10 @@ export default function ChatRegistroScreen() {
   return (
     <View style={styles.pagerOverflow} {...panResponder.panHandlers}>
       <Animated.View style={[styles.pagerRow, { transform: [{ translateX: swipeX }] }]}>
-      <KeyboardAvoidingView style={[styles.wrapper, styles.pagerPane]} behavior="padding">
+      <KeyboardAvoidingView
+        style={[styles.wrapper, styles.pagerPane]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <ReferenciaChipsBar chips={chips} activo={activeReferencia} onSelectChip={activarReferencia} />
 
       <FlatList

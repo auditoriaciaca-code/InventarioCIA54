@@ -232,7 +232,7 @@ export default function RegistroScreen() {
           <Text style={styles.barcodeBadgeText}>📱 {codigoBarras}</Text>
         </View>
       ) : null}
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         ref={scrollRef}
         style={styles.container}
