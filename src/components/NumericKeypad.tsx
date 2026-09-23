@@ -8,7 +8,6 @@ export interface NumericKeypadHandle {
 
 interface Props {
   onSubmit: (pesoBruto: number) => boolean | void | Promise<boolean | void>
-  submitLabel?: string
   disabled?: boolean
 }
 
@@ -17,7 +16,7 @@ const TECLAS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫']
 // El valor tecleado vive aquí adentro (no en la pantalla completa de Rápido)
 // para que cada tecla solo vuelva a dibujar este teclado y no todo el chat.
 const NumericKeypad = forwardRef<NumericKeypadHandle, Props>(function NumericKeypad(
-  { onSubmit, submitLabel = 'Enviar', disabled },
+  { onSubmit, disabled },
   ref
 ) {
   const [value, setValue] = useState('')
@@ -47,9 +46,19 @@ const NumericKeypad = forwardRef<NumericKeypadHandle, Props>(function NumericKey
 
   return (
     <View style={styles.container}>
-      <View style={styles.pantalla}>
-        <Text style={styles.pantallaValor} numberOfLines={1}>{value || '0'}</Text>
-        <Text style={styles.pantallaUnidad}>kg</Text>
+      <View style={styles.pantallaRow}>
+        <View style={styles.pantalla}>
+          <Text style={styles.pantallaValor} numberOfLines={1}>{value || '0'}</Text>
+          <Text style={styles.pantallaUnidad}>kg</Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.enviarBtn, submitDisabled && styles.enviarBtnDisabled]}
+          onPress={handleSubmit}
+          disabled={submitDisabled}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.enviarBtnIcon}>➤</Text>
+        </TouchableOpacity>
       </View>
       <View style={styles.grid}>
         {TECLAS.map(t => (
@@ -63,14 +72,6 @@ const NumericKeypad = forwardRef<NumericKeypadHandle, Props>(function NumericKey
           </TouchableOpacity>
         ))}
       </View>
-      <TouchableOpacity
-        style={[styles.enviarBtn, submitDisabled && styles.enviarBtnDisabled]}
-        onPress={handleSubmit}
-        disabled={submitDisabled}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.enviarBtnText}>{submitLabel}</Text>
-      </TouchableOpacity>
     </View>
   )
 })
@@ -82,7 +83,14 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: COLORS.card,
   },
+  pantallaRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 8,
+    marginBottom: 8,
+  },
   pantalla: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'center',
@@ -91,7 +99,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     paddingVertical: 6,
-    marginBottom: 8,
   },
   pantallaValor: {
     fontSize: 24,
@@ -133,18 +140,18 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
   },
   enviarBtn: {
-    marginTop: 4,
+    width: 60,
     backgroundColor: COLORS.primary,
     borderRadius: SIZES.radiusSm,
-    paddingVertical: 13,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   enviarBtnDisabled: {
     opacity: 0.4,
   },
-  enviarBtnText: {
+  enviarBtnIcon: {
     color: 'white',
-    fontSize: 14,
+    fontSize: 26,
     fontWeight: '800',
   },
 })

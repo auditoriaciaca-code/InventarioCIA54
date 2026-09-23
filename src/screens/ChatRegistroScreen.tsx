@@ -714,7 +714,6 @@ export default function ChatRegistroScreen() {
         ref={keypadRef}
         onSubmit={handleEnviarPeso}
         disabled={sending}
-        submitLabel={activeReferencia ? `Enviar · ${activeReferencia.codigo}` : 'Elegir material'}
       />
 
       <PhotoViewer visible={fotosVisible} fotos={fotosActuales} onClose={() => setFotosVisible(false)} />
