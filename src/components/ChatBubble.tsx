@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { View, Text, TouchableOpacity, Image, Alert, StyleSheet } from 'react-native'
 import { ChatListItem, ChatPendingMessage, Comparacion, Foto, RegistroPesada } from '../types'
 import { COLORS, SIZES } from '../constants/theme'
@@ -46,6 +47,8 @@ function verDetalleComparacion(r: RegistroPesada, c: Comparacion) {
 }
 
 export default function ChatBubble({ item, fotos, comparacion, usarTara = true, onPressRegistro, onLongPressRegistro, onPressPending, onPressFoto }: Props) {
+  const [fotoRota, setFotoRota] = useState(false)
+
   if (item.kind === 'system') {
     return (
       <View style={styles.systemWrap}>
@@ -80,9 +83,13 @@ export default function ChatBubble({ item, fotos, comparacion, usarTara = true, 
         <Text style={styles.codigo} numberOfLines={2}>
           {r.referencia_codigo} · {formatDescripcion(r.referencia_descripcion)}
         </Text>
-        {fotos && fotos.length > 0 && (
+        {fotos && fotos.length > 0 && !fotoRota && (
           <TouchableOpacity onPress={() => onPressFoto(fotos)} style={styles.thumbWrap}>
-            <Image source={{ uri: fotos[0].path_local }} style={styles.thumb} />
+            <Image
+              source={{ uri: fotos[0].path_local }}
+              style={styles.thumb}
+              onError={() => setFotoRota(true)}
+            />
             {fotos.length > 1 && (
               <View style={styles.thumbBadge}>
                 <Text style={styles.thumbBadgeText}>+{fotos.length - 1}</Text>
