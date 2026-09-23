@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, ScrollView,
-  KeyboardAvoidingView, Alert, Modal, StyleSheet, Animated, PanResponder, Dimensions, Platform
+  Alert, Modal, StyleSheet, Animated, PanResponder, Dimensions
 } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
 import { randomUUID } from 'expo-crypto'
@@ -29,7 +29,6 @@ import { formatDescripcion } from '../utils/format'
 import { useSesion } from '../context/SesionContext'
 import { useComparaciones } from '../context/ComparacionesContext'
 import { useConfig } from '../context/ConfigContext'
-import { useKeyboardHeight } from '../hooks/useKeyboardHeight'
 import {
   RegistroPesada, Referencia, Foto, ReferenciaFlat,
   ChatPendingMessage, ChatListItem, Lote
@@ -56,7 +55,6 @@ export default function ChatRegistroScreen() {
   const { sesion } = useSesion()
   const { porRegistro } = useComparaciones()
   const { usarTara } = useConfig()
-  const alturaTeclado = useKeyboardHeight()
 
   const [registros, setRegistros] = useState<RegistroPesada[]>([])
   const [pendientes, setPendientes] = useState<ChatPendingMessage[]>([])
@@ -602,14 +600,7 @@ export default function ChatRegistroScreen() {
           <MaterialPickerPanel recientes={chips} activo={activeReferencia} onSelect={handleSeleccionarMaterial} />
         )}
       </View>
-      <KeyboardAvoidingView
-        style={[
-          styles.wrapper,
-          styles.pagerPane,
-          Platform.OS === 'android' && { paddingBottom: alturaTeclado },
-        ]}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <View style={[styles.wrapper, styles.pagerPane]}>
       <ReferenciaChipsBar chips={chips} activo={activeReferencia} onSelectChip={activarReferencia} />
 
       <View style={styles.chatArea}>
@@ -944,7 +935,7 @@ export default function ChatRegistroScreen() {
           </View>
         </View>
       </Modal>
-      </KeyboardAvoidingView>
+      </View>
 
       <View style={styles.pagerPane}>
         {panelMontado && (
