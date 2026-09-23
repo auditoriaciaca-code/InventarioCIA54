@@ -665,7 +665,7 @@ export default function ChatRegistroScreen() {
           <Text style={styles.materialBarVacio}>Sin material seleccionado</Text>
         )}
         <TouchableOpacity style={styles.materialBarBtn} onPress={abrirMaterialPanel} activeOpacity={0.7}>
-          <Text style={styles.materialBarBtnText}>Cambiar</Text>
+          <Text style={styles.materialBarBtnText}>🔄 Cambiar</Text>
         </TouchableOpacity>
       </View>
 
