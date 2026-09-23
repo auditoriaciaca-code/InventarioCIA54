@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useState } from 'react'
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native'
 import { COLORS, SIZES } from '../constants/theme'
 
 export interface NumericKeypadHandle {
@@ -12,6 +12,17 @@ interface Props {
 }
 
 const TECLAS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫']
+
+// Alto de tecla calculado a mano (no con aspectRatio): en Android, aspectRatio
+// combinado con ancho en % dentro de un contenedor con flexWrap a veces no
+// coincide entre lo que Yoga mide y lo que realmente se pinta en pantalla,
+// dejando hueco debajo de las teclas. Un alto fijo en px no tiene esa ambigüedad.
+const CONTAINER_PADDING = 6
+const GRID_GAP = 6
+const COLS = 3
+const { width: screenWidth } = Dimensions.get('window')
+const TECLA_ANCHO = (screenWidth - CONTAINER_PADDING * 2 - GRID_GAP * (COLS - 1)) / COLS
+const TECLA_ALTO = TECLA_ANCHO / 2.3
 
 // El valor tecleado vive aquí adentro (no en la pantalla completa de Rápido)
 // para que cada tecla solo vuelva a dibujar este teclado y no todo el chat.
@@ -118,8 +129,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   tecla: {
-    width: '31%',
-    aspectRatio: 2.3,
+    width: TECLA_ANCHO,
+    height: TECLA_ALTO,
     backgroundColor: COLORS.bg,
     borderRadius: SIZES.radiusSm,
     borderWidth: 1,
