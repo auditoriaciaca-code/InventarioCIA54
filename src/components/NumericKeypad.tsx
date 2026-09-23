@@ -80,14 +80,14 @@ export default NumericKeypad
 
 const styles = StyleSheet.create({
   container: {
-    padding: 8,
+    padding: 6,
     backgroundColor: COLORS.card,
   },
   pantallaRow: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    gap: 8,
-    marginBottom: 8,
+    gap: 6,
+    marginBottom: 6,
   },
   pantalla: {
     flex: 1,
@@ -115,11 +115,11 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
   },
   tecla: {
     width: '31%',
-    aspectRatio: 1.9,
+    aspectRatio: 2.3,
     backgroundColor: COLORS.bg,
     borderRadius: SIZES.radiusSm,
     borderWidth: 1,
