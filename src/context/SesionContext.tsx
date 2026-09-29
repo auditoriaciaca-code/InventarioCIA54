@@ -3,6 +3,7 @@ import { Sesion } from '../types'
 import { getDatabase } from '../services/database'
 import { subirSesionInmediato, liberarSesionInmediato } from '../services/supabase'
 import { randomUUID } from 'expo-crypto'
+import { hoyLocalISO } from '../utils/fechas'
 
 interface SesionContextType {
   sesion: Sesion | null
@@ -71,12 +72,20 @@ export function SesionProvider({ children }: { children: ReactNode }) {
 
       const activa = rows.find((r: any) => r.activa === 1)
       if (activa) {
-        setSesion(activa)
-        // Si ya hay una sesión activa guardada en el teléfono (ej. tras un
-        // reload de la app), no tapar la pantalla con el selector — que
-        // retome el inventario directo. El botón del header sigue
-        // disponible para cambiar de sala manualmente.
-        setMostrarSelector(false)
+        const esDeHoy = String(activa.fecha || activa.created_at || '').slice(0, 10) === hoyLocalISO()
+        if (esDeHoy) {
+          setSesion(activa)
+          // Si ya hay una sesión activa de HOY guardada en el teléfono (ej.
+          // tras un reload de la app), no tapar la pantalla con el
+          // selector — que retome el inventario directo. El botón del
+          // header sigue disponible para cambiar de sala manualmente.
+          setMostrarSelector(false)
+        }
+        // Si la última sesión activa es de un día anterior, NO se retoma
+        // sola — se deja ver el lobby para confirmar quién es hoy. Esto
+        // evita que un celular reutilizado días después (u otra persona
+        // usando el mismo teléfono) quede "disfrazado" con el nombre de
+        // quien lo usó la última vez, sin darse cuenta.
       }
     } catch (e) {
       console.error(e)
