@@ -643,3 +643,100 @@ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE inv_cierres;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- =====================================================================
+-- BLINDAR EL EMPAREJAMIENTO CONTRA DATOS DE DÍAS DISTINTOS   (2026-09-23)
+-- Bug real encontrado: fn_emparejar_registro buscaba la pesada más
+-- parecida en peso por área+material+referencia SIN ningún límite de
+-- tiempo. Una pesada vieja sin pareja (ej. un día que solo trabajó una
+-- persona en el área) se quedaba disponible para siempre y podía
+-- terminar emparejada por error con una pesada de días después — así
+-- se contaminaron las alertas de doble conteo con datos de prueba
+-- viejos. Ahora solo se considera pareja si es del mismo día calendario.
+-- =====================================================================
+CREATE OR REPLACE FUNCTION fn_emparejar_registro()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_tolerancia    REAL := 1.0;
+  v_mejor_id      TEXT;
+  v_mejor_pareado BOOLEAN;
+  v_y             inv_registros%ROWTYPE;
+  v_comp_previa   UUID;
+  v_pareja_previa TEXT;
+  v_comp_id       UUID;
+  v_dif           REAL;
+BEGIN
+  BEGIN
+    IF COALESCE(NEW.area_id,'') = '' THEN
+      RETURN NULL;
+    END IF;
+
+    -- Mejor candidato del otro operador para esta área+material+referencia
+    -- exacta Y EL MISMO DÍA CALENDARIO: el de peso más parecido, sea que
+    -- ya tenga pareja (solo cuenta si NEW encaja mejor que su pareja
+    -- actual) o esté libre.
+    SELECT r.id, r.emparejado
+      INTO v_mejor_id, v_mejor_pareado
+    FROM inv_registros r
+    LEFT JOIN inv_comparaciones c ON c.id = r.comparacion_id
+    WHERE r.area_id           = NEW.area_id
+      AND r.material_id       = NEW.material_id
+      AND r.referencia_codigo = NEW.referencia_codigo
+      AND r.sesion_id        <> NEW.sesion_id
+      AND r.id               <> NEW.id
+      AND (r.created_at AT TIME ZONE 'America/Bogota')::date = (NEW.created_at AT TIME ZONE 'America/Bogota')::date
+      AND (r.emparejado = FALSE OR ABS(r.peso_neto - NEW.peso_neto) < c.diferencia)
+    ORDER BY ABS(r.peso_neto - NEW.peso_neto) ASC
+    LIMIT 1;
+
+    IF v_mejor_id IS NULL THEN
+      RETURN NULL;
+    END IF;
+
+    SELECT * INTO v_y FROM inv_registros WHERE id = v_mejor_id FOR UPDATE;
+
+    IF v_y.emparejado THEN
+      -- "Robo": NEW encaja mejor con v_y que su pareja actual. Se anula
+      -- esa comparación y se libera a quien pierde su lugar.
+      v_comp_previa := v_y.comparacion_id;
+
+      SELECT CASE WHEN registro_a_id = v_mejor_id THEN registro_b_id ELSE registro_a_id END
+        INTO v_pareja_previa
+      FROM inv_comparaciones WHERE id = v_comp_previa;
+
+      UPDATE inv_registros SET emparejado = FALSE, comparacion_id = NULL WHERE id = v_pareja_previa;
+      UPDATE inv_comparaciones SET estado = 'anulada', actualizado_at = NOW() WHERE id = v_comp_previa;
+    END IF;
+
+    v_dif := ABS(v_y.peso_neto - NEW.peso_neto);
+
+    INSERT INTO inv_comparaciones (
+      area_id, material_id,
+      registro_a_id, registro_b_id, sesion_a_id, sesion_b_id,
+      operador_a, operador_b, referencia_a, referencia_b, misma_referencia,
+      peso_a, peso_b, diferencia, tolerancia, estado
+    ) VALUES (
+      NEW.area_id, NEW.material_id,
+      v_y.id, NEW.id, v_y.sesion_id, NEW.sesion_id,
+      COALESCE(v_y.created_by,''), COALESCE(NEW.created_by,''),
+      COALESCE(v_y.referencia_codigo,''), COALESCE(NEW.referencia_codigo,''),
+      TRUE,
+      v_y.peso_neto, NEW.peso_neto,
+      v_dif, v_tolerancia,
+      CASE WHEN v_dif > v_tolerancia THEN 'alerta' ELSE 'ok' END
+    )
+    RETURNING id INTO v_comp_id;
+
+    UPDATE inv_registros
+       SET emparejado = TRUE, comparacion_id = v_comp_id
+     WHERE id IN (v_y.id, NEW.id);
+
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'fn_emparejar_registro falló para % : %', NEW.id, SQLERRM;
+  END;
+
+  RETURN NULL;
+END;
+$$;
