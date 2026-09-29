@@ -878,3 +878,90 @@ BEGIN
   RETURN NULL;
 END;
 $$;
+
+-- =====================================================================
+-- FECHA REAL DE LA PESADA EN LAS COMPARACIONES RETROACTIVAS  (2026-09-29)
+-- Bug real: al invocar fn_intentar_emparejar días después de la pesada
+-- real (por ejemplo, al reparar a mano un registro huérfano desde el SQL
+-- Editor), el INSERT en inv_comparaciones no indicaba created_at, así
+-- que tomaba el default de la tabla (NOW()) — la fecha en que se corrió
+-- la reparación, no la fecha real de la pesada. Eso hizo aparecer
+-- inventario de días anteriores como si fuera "de hoy" en la plataforma
+-- web. Ahora se fija explícitamente a la fecha real (la más reciente
+-- entre las dos pesadas emparejadas).
+-- =====================================================================
+CREATE OR REPLACE FUNCTION fn_intentar_emparejar(p_registro_id TEXT)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_tolerancia    REAL := 1.0;
+  v_new           inv_registros%ROWTYPE;
+  v_mejor_id      TEXT;
+  v_y             inv_registros%ROWTYPE;
+  v_comp_previa   UUID;
+  v_pareja_previa TEXT;
+  v_comp_id       UUID;
+  v_dif           REAL;
+  v_fecha_comp    TIMESTAMPTZ;
+BEGIN
+  SELECT * INTO v_new FROM inv_registros WHERE id = p_registro_id;
+  IF NOT FOUND OR COALESCE(v_new.area_id,'') = '' OR v_new.emparejado THEN
+    RETURN;
+  END IF;
+
+  SELECT r.id
+    INTO v_mejor_id
+  FROM inv_registros r
+  LEFT JOIN inv_comparaciones c ON c.id = r.comparacion_id
+  WHERE r.area_id           = v_new.area_id
+    AND r.material_id       = v_new.material_id
+    AND r.referencia_codigo = v_new.referencia_codigo
+    AND r.sesion_id        <> v_new.sesion_id
+    AND r.id               <> v_new.id
+    AND (r.created_at AT TIME ZONE 'America/Bogota')::date = (v_new.created_at AT TIME ZONE 'America/Bogota')::date
+    AND (r.emparejado = FALSE OR ABS(r.peso_neto - v_new.peso_neto) < c.diferencia)
+  ORDER BY ABS(r.peso_neto - v_new.peso_neto) ASC
+  LIMIT 1;
+
+  IF v_mejor_id IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_y FROM inv_registros WHERE id = v_mejor_id FOR UPDATE;
+
+  IF v_y.emparejado THEN
+    v_comp_previa := v_y.comparacion_id;
+    SELECT CASE WHEN registro_a_id = v_mejor_id THEN registro_b_id ELSE registro_a_id END
+      INTO v_pareja_previa
+    FROM inv_comparaciones WHERE id = v_comp_previa;
+    UPDATE inv_registros SET emparejado = FALSE, comparacion_id = NULL WHERE id = v_pareja_previa;
+    UPDATE inv_comparaciones SET estado = 'anulada', actualizado_at = NOW() WHERE id = v_comp_previa;
+  END IF;
+
+  v_dif := ABS(v_y.peso_neto - v_new.peso_neto);
+  v_fecha_comp := GREATEST(v_y.created_at, v_new.created_at);
+
+  INSERT INTO inv_comparaciones (
+    area_id, material_id,
+    registro_a_id, registro_b_id, sesion_a_id, sesion_b_id,
+    operador_a, operador_b, referencia_a, referencia_b, misma_referencia,
+    peso_a, peso_b, diferencia, tolerancia, estado, created_at
+  ) VALUES (
+    v_new.area_id, v_new.material_id,
+    v_y.id, v_new.id, v_y.sesion_id, v_new.sesion_id,
+    COALESCE(v_y.created_by,''), COALESCE(v_new.created_by,''),
+    COALESCE(v_y.referencia_codigo,''), COALESCE(v_new.referencia_codigo,''),
+    TRUE,
+    v_y.peso_neto, v_new.peso_neto,
+    v_dif, v_tolerancia,
+    CASE WHEN v_dif > v_tolerancia THEN 'alerta' ELSE 'ok' END,
+    v_fecha_comp
+  )
+  RETURNING id INTO v_comp_id;
+
+  UPDATE inv_registros
+     SET emparejado = TRUE, comparacion_id = v_comp_id
+   WHERE id IN (v_y.id, v_new.id);
+END;
+$$;
