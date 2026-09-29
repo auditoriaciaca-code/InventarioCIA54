@@ -124,9 +124,30 @@ export default function SesionSelector() {
    * Continuar una sesión de la lista "sesiones de esta área" — puede ser de
    * un día anterior y/o de otro celular. Respeta el mismo tope de 2
    * operadores a la vez por área que "Entrar" (a menos que ya seas tú uno
-   * de los 2 ocupantes actuales).
+   * de los 2 ocupantes actuales). Si la sesión NO es de hoy, avisa primero
+   * (evita el caso real: tocar por error una sesión vieja pensando que era
+   * "entrar a pesar hoy").
    */
-  async function handleContinuarRemota(s: SesionRemota) {
+  function handleContinuarRemota(s: SesionRemota) {
+    const esDeHoy = String(s.fecha || s.created_at || '').slice(0, 10) === hoyLocalISO()
+    if (esDeHoy) {
+      ejecutarContinuarRemota(s)
+      return
+    }
+    const fechaTexto = new Date(s.created_at).toLocaleDateString('es-MX', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+    })
+    Alert.alert(
+      '¿Continuar sesión vieja?',
+      `Esta sesión de ${s.nombre_operador} se inició el ${fechaTexto}, no hoy. Si vas a registrar pesadas de HOY, usa "Escribe tu nombre para entrar" en vez de esto.\n\n¿Seguro que quieres continuar la sesión del ${fechaTexto}?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Sí, continuar', onPress: () => ejecutarContinuarRemota(s) },
+      ]
+    )
+  }
+
+  async function ejecutarContinuarRemota(s: SesionRemota) {
     if (procesando) return
     setProcesando(true)
     try {
