@@ -9,7 +9,7 @@ import MaterialGrid from '../components/MaterialGrid'
 import ReferenciaSelector from '../components/ReferenciaSelector'
 import { getDatabase } from '../services/database'
 import { COLORS, SIZES } from '../constants/theme'
-import { sincronizar } from '../services/sync'
+import { sincronizar, subirEnSegundoPlano } from '../services/sync'
 import { useSesion } from '../context/SesionContext'
 import { useConfig } from '../context/ConfigContext'
 
@@ -91,6 +91,24 @@ export default function InventarioScreen() {
         'UPDATE inv_registros SET material_id = ?, referencia_codigo = ?, referencia_descripcion = ?, peso_bruto = ?, tara = ?, contenedor = ?, observaciones = ?, peso_neto = ?, synced = 0 WHERE id = ?',
         [editMaterialId, editReferencia?.codigo || '', editReferencia?.descripcion || '', pb, t, editContenedor, editObservaciones, pb - t, editando.id]
       )
+      subirEnSegundoPlano({
+        id: editando.id,
+        sesion_id: editando.sesion_id,
+        area_id: editando.area_id || '',
+        material_id: editMaterialId,
+        referencia_codigo: editReferencia?.codigo || '',
+        referencia_descripcion: editReferencia?.descripcion || '',
+        contenedor: editContenedor,
+        tara: t,
+        peso_bruto: pb,
+        peso_neto: pb - t,
+        observaciones: editObservaciones,
+        codigo_barras: editando.codigo_barras || '',
+        lote_codigo: editando.lote_codigo || '',
+        fotos_count: editando.fotos_count,
+        created_at: editando.created_at,
+        created_by: editando.created_by,
+      })
       setEditando(null)
       cargarRegistros()
     } catch (e: any) {

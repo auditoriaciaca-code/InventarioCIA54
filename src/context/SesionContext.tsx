@@ -93,7 +93,15 @@ export function SesionProvider({ children }: { children: ReactNode }) {
       total_registros: 0, total_neto: 0,
     }
 
+    // Best-effort, sin bloquear la creación de la sesión: si falla por falta
+    // de señal (frecuente en áreas como Cargue), queda synced=0 y
+    // reintentarSesionesPendientes() (sync.ts) la reintenta después — antes
+    // no había segunda oportunidad y la sesión quedaba invisible para
+    // siempre en el lobby de otros celulares.
     subirSesionInmediato({ id, nombre_operador: nombre, area_id: areaId, fecha: now, activa: 1, created_at: now })
+      .then(ok => {
+        if (ok) db.runAsync('UPDATE inv_sesiones SET synced = 1 WHERE id = ?', [id]).catch(() => {})
+      })
 
     setSesion(nueva)
     await recargarSesiones()

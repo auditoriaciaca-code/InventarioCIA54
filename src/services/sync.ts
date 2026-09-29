@@ -3,6 +3,7 @@ import {
   syncRegistros,
   syncFotos,
   subirRegistroInmediato,
+  subirSesionInmediato,
   obtenerLotesPorArea,
   subirFotoStorage,
   obtenerAreas,
@@ -12,10 +13,15 @@ import { hoyLocalISO } from '../utils/fechas'
 import { actualizarAreas } from '../constants/areas'
 
 /**
- * Dispara la subida de un registro recién guardado en segundo plano
- * (no bloquea el flujo de guardado). Solo marca synced=1 si el registro no
- * tiene fotos: los que tienen fotos deben seguir pasando por sincronizar()
- * para que también suban sus filas de inv_fotos.
+ * Dispara la subida de un registro en segundo plano (no bloquea el flujo de
+ * guardado) — sirve tanto para uno recién creado como para uno editado, ya
+ * que subirRegistroInmediato hace upsert por id. Sin esto, una edición
+ * (peso, material, etc.) se quedaba solo en el celular hasta que alguien
+ * tocara "Sincronizar" en Inventario — ni la comparación de doble conteo en
+ * Supabase se recalculaba ni la plataforma web se enteraba del cambio.
+ * Solo marca synced=1 si el registro no tiene fotos: los que tienen fotos
+ * deben seguir pasando por sincronizar() para que también suban sus filas
+ * de inv_fotos.
  */
 export function subirEnSegundoPlano(registro: any): void {
   subirRegistroInmediato(registro)
@@ -49,6 +55,35 @@ export function subirFotosEnSegundoPlano(
       })
       .catch(() => {})
   }
+}
+
+/**
+ * Reintenta subir sesiones que quedaron pendientes (el intento inmediato al
+ * crearlas falló por falta de señal, ej. en áreas con mala cobertura como
+ * Cargue). Sin esto, una sesión que nunca llegó a Supabase queda invisible
+ * para siempre en el lobby de otros celulares — nunca hay una segunda
+ * oportunidad. Se llama junto con el refresco de ocupación del lobby y con
+ * la sincronización manual, para que se autocorrija en cuanto haya señal.
+ */
+export async function reintentarSesionesPendientes(): Promise<void> {
+  try {
+    const db = getDatabase()
+    const pendientes = await db.getAllAsync<any>('SELECT * FROM inv_sesiones WHERE synced = 0')
+    for (const s of pendientes) {
+      const ok = await subirSesionInmediato({
+        id: s.id,
+        nombre_operador: s.nombre_operador,
+        area_id: s.area_id,
+        fecha: s.fecha,
+        activa: s.activa,
+        created_at: s.created_at,
+        ...(s.liberada_at ? { liberada_at: s.liberada_at } : {}),
+      })
+      if (ok) {
+        await db.runAsync('UPDATE inv_sesiones SET synced = 1 WHERE id = ?', [s.id])
+      }
+    }
+  } catch {}
 }
 
 /**
@@ -152,6 +187,8 @@ export async function estaAreaCerradaHoy(areaId: string): Promise<boolean> {
 export async function sincronizar(): Promise<{ ok: boolean; mensaje: string }> {
   try {
     const db = getDatabase()
+
+    await reintentarSesionesPendientes()
 
     const registrosPendientes = await db.getAllAsync<any>(
       "SELECT * FROM inv_registros WHERE synced = 0"

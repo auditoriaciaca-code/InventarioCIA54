@@ -108,6 +108,9 @@ async function migrarBase(): Promise<void> {
   try {
     await db.execAsync(`ALTER TABLE inv_registros ADD COLUMN lote_codigo TEXT DEFAULT ''`)
   } catch {}
+  try {
+    await db.execAsync(`ALTER TABLE inv_sesiones ADD COLUMN synced INTEGER DEFAULT 0`)
+  } catch {}
 }
 
 async function seedMateriales(): Promise<void> {

@@ -157,11 +157,17 @@ export default function ChatRegistroScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (sesion) {
-        cargarHistorial()
+      if (!sesion) return
+      cargarHistorial()
+      sincronizarLotes(sesion.area_id || '')
+      sincronizarCierresHoy()
+      // Reintento periódico, no solo al entrar: si el área tiene mala señal
+      // (ej. Cargue) el primer intento puede fallar y antes se quedaba sin
+      // otra oportunidad mientras la pantalla seguía abierta.
+      const intervalo = setInterval(() => {
         sincronizarLotes(sesion.area_id || '')
-        sincronizarCierresHoy()
-      }
+      }, 15000)
+      return () => clearInterval(intervalo)
     }, [sesion])
   )
 
@@ -479,6 +485,24 @@ export default function ChatRegistroScreen() {
           [editando.area_id || sesion?.area_id || '', lote]
         )
       }
+      subirEnSegundoPlano({
+        id: editando.id,
+        sesion_id: editando.sesion_id,
+        area_id: editando.area_id || sesion?.area_id || '',
+        material_id: editMaterialId,
+        referencia_codigo: editReferencia?.codigo || '',
+        referencia_descripcion: editReferencia?.descripcion || '',
+        contenedor: editContenedor,
+        tara: t,
+        peso_bruto: pb,
+        peso_neto: pb - t,
+        observaciones: editObservaciones,
+        codigo_barras: editando.codigo_barras || '',
+        lote_codigo: lote,
+        fotos_count: editando.fotos_count,
+        created_at: editando.created_at,
+        created_by: editando.created_by,
+      })
       setEditando(null)
       await cargarHistorial()
     } catch (e: any) {

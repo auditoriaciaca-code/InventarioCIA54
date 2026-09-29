@@ -15,7 +15,7 @@ import {
   obtenerClaveSupervisorHash,
   guardarClaveSupervisorHash,
 } from '../services/supabase'
-import { sincronizarAreas } from '../services/sync'
+import { sincronizarAreas, reintentarSesionesPendientes } from '../services/sync'
 import { sha256, slugify } from '../utils/hash'
 import { hoyLocalISO } from '../utils/fechas'
 import HistorialAreaModal from './HistorialAreaModal'
@@ -51,6 +51,7 @@ export default function SesionSelector() {
     setCreandoAreaAbierto(false)
 
     async function actualizar() {
+      await reintentarSesionesPendientes()
       setOperadoresPorArea(await obtenerOperadoresHoyPorArea())
       setCierresHoy(await obtenerCierresHoy())
     }
