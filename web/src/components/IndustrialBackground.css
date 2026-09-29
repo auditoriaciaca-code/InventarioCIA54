@@ -1,0 +1,54 @@
+.industrial-bg {
+  position: relative;
+  min-height: 100svh;
+  background: radial-gradient(ellipse at 50% 40%, #173a24 0%, #0f2a1a 55%, #050a07 100%);
+}
+
+.industrial-bg-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.industrial-bg-texture {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background-size: cover;
+  background-position: center;
+  opacity: 0.22;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+.industrial-bg-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 35%, rgba(4, 8, 5, 0.55) 100%);
+}
+
+.industrial-bg-content {
+  position: relative;
+  z-index: 3;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .industrial-bg-canvas {
+    display: none;
+  }
+  .industrial-bg::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background: radial-gradient(ellipse at 50% 40%, #173a24 0%, #0f2a1a 55%, #050a07 100%);
+  }
+}
