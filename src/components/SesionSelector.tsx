@@ -14,7 +14,6 @@ import {
   reabrirInventarioRemoto,
   obtenerClaveSupervisorHash,
   guardarClaveSupervisorHash,
-  obtenerSesionesPorArea,
 } from '../services/supabase'
 import { sincronizarAreas, reintentarSesionesPendientes, reintentarLiberacionesPendientes } from '../services/sync'
 import { sha256, slugify } from '../utils/hash'
@@ -45,9 +44,6 @@ export default function SesionSelector() {
   const [reabriendo, setReabriendo] = useState(false)
 
   const [historialAreaId, setHistorialAreaId] = useState<string | null>(null)
-
-  const [sesionesArea, setSesionesArea] = useState<Record<string, SesionRemota[]>>({})
-  const [cargandoSesionesArea, setCargandoSesionesArea] = useState<string | null>(null)
 
   useEffect(() => {
     if (!mostrarSelector) return
@@ -112,12 +108,6 @@ export default function SesionSelector() {
     setPinReabrir('')
     const sugerido = sesion?.nombre_operador || sesiones[0]?.nombre_operador || ''
     setNombreNuevo(sugerido)
-
-    setCargandoSesionesArea(areaId)
-    obtenerSesionesPorArea(areaId).then(lista => {
-      setSesionesArea(prev => ({ ...prev, [areaId]: lista }))
-      setCargandoSesionesArea(null)
-    })
   }
 
   /**
@@ -164,6 +154,7 @@ export default function SesionSelector() {
       await continuarSesionRemota(s)
       ocultarSelector()
       setAreaExpandidaId(null)
+      setHistorialAreaId(null)
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'No se pudo continuar esa sesión')
     } finally {
@@ -460,34 +451,9 @@ export default function SesionSelector() {
                         </Text>
                       )}
 
-                      <View style={styles.sesionesAreaBox}>
-                        <Text style={styles.sesionesAreaLabel}>Sesiones de esta área (todos los celulares)</Text>
-                        {cargandoSesionesArea === area.id ? (
-                          <Text style={styles.sesionesAreaVacio}>Cargando…</Text>
-                        ) : (sesionesArea[area.id] || []).length === 0 ? (
-                          <Text style={styles.sesionesAreaVacio}>Sin sesiones anteriores registradas</Text>
-                        ) : (
-                          (sesionesArea[area.id] || []).map(s => {
-                            const fecha = new Date(s.created_at).toLocaleDateString('es-MX', {
-                              day: '2-digit', month: '2-digit', year: 'numeric',
-                            })
-                            return (
-                              <TouchableOpacity
-                                key={s.id}
-                                style={styles.sesionAreaRow}
-                                onPress={() => handleContinuarRemota(s)}
-                                disabled={procesando}
-                              >
-                                <View style={{ flex: 1, minWidth: 0 }}>
-                                  <Text style={styles.sesionAreaNombre} numberOfLines={1}>{s.nombre_operador}</Text>
-                                  <Text style={styles.sesionAreaFecha}>{fecha}{!s.liberada_at ? ' · abierta' : ''}</Text>
-                                </View>
-                                <Text style={styles.sesionAreaContinuar}>Continuar →</Text>
-                              </TouchableOpacity>
-                            )
-                          })
-                        )}
-                      </View>
+                      <TouchableOpacity style={styles.verHistorialBtn} onPress={() => setHistorialAreaId(area.id)}>
+                        <Text style={styles.verHistorialBtnText}>📜 Ver historial y continuar otra sesión</Text>
+                      </TouchableOpacity>
                     </View>
                   )}
                 </View>
@@ -578,7 +544,11 @@ export default function SesionSelector() {
         </View>
       </View>
 
-      <HistorialAreaModal areaId={historialAreaId} onClose={() => setHistorialAreaId(null)} />
+      <HistorialAreaModal
+        areaId={historialAreaId}
+        onClose={() => setHistorialAreaId(null)}
+        onContinuar={handleContinuarRemota}
+      />
     </Modal>
   )
 }
@@ -861,48 +831,15 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
     textAlign: 'center',
   },
-  sesionesAreaBox: {
+  verHistorialBtn: {
     marginTop: 4,
-    paddingTop: 10,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
-    gap: 6,
-  },
-  sesionesAreaLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.textLight,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-    marginBottom: 2,
-  },
-  sesionesAreaVacio: {
-    fontSize: 12,
-    color: COLORS.textLight,
-    fontStyle: 'italic',
-  },
-  sesionAreaRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    padding: 10,
-    borderRadius: SIZES.radiusSm,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.card,
   },
-  sesionAreaNombre: {
-    fontWeight: '700',
-    fontSize: 13,
-    color: COLORS.text,
-  },
-  sesionAreaFecha: {
-    fontSize: 11,
-    color: COLORS.textLight,
-    marginTop: 1,
-  },
-  sesionAreaContinuar: {
-    fontSize: 11,
+  verHistorialBtnText: {
+    fontSize: 12.5,
     fontWeight: '700',
     color: COLORS.primary,
   },

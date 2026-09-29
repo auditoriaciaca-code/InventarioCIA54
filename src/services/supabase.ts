@@ -332,7 +332,7 @@ export async function obtenerHistorialArea(areaId: string): Promise<any[]> {
   try {
     const { data, error } = await supabase
       .from('inv_registros')
-      .select('id, peso_bruto, tara, created_by, created_at')
+      .select('id, sesion_id, peso_bruto, tara, created_by, created_at')
       .eq('area_id', areaId)
       .order('created_at', { ascending: false })
       .limit(5000)
