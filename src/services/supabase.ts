@@ -342,3 +342,40 @@ export async function obtenerHistorialArea(areaId: string): Promise<any[]> {
     return []
   }
 }
+
+/**
+ * Todas las sesiones (de cualquier celular) que hayan existido en un área,
+ * para poder elegir "continuar" una sesión de un día anterior sin importar
+ * quién ni desde qué teléfono la creó — antes cada celular solo "conocía"
+ * localmente las sesiones que él mismo había creado.
+ */
+export async function obtenerSesionesPorArea(areaId: string): Promise<
+  Array<{ id: string; nombre_operador: string; area_id: string; fecha: string; created_at: string; liberada_at: string | null }>
+> {
+  try {
+    const { data, error } = await supabase
+      .from('inv_sesiones')
+      .select('id, nombre_operador, area_id, fecha, created_at, liberada_at')
+      .eq('area_id', areaId)
+      .order('created_at', { ascending: false })
+      .limit(100)
+    if (error || !data) return []
+    return data
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Reactiva una sesión (quita el liberada_at) al "continuarla" desde otro
+ * celular o después de que ya se había liberado. Best-effort: si falla, la
+ * sesión se sigue usando localmente igual (nunca bloquea seguir pesando).
+ */
+export async function reactivarSesionRemota(sesionId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('inv_sesiones').update({ liberada_at: null }).eq('id', sesionId)
+    return !error
+  } catch {
+    return false
+  }
+}

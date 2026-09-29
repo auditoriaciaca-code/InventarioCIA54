@@ -5,7 +5,7 @@ import {
 } from 'react-native'
 import { Sesion } from '../types'
 import { COLORS, SIZES } from '../constants/theme'
-import { useSesion } from '../context/SesionContext'
+import { useSesion, SesionRemota } from '../context/SesionContext'
 import { AREAS, AREA_MAP, nombreArea } from '../constants/areas'
 import {
   obtenerOperadoresHoyPorArea,
@@ -14,6 +14,7 @@ import {
   reabrirInventarioRemoto,
   obtenerClaveSupervisorHash,
   guardarClaveSupervisorHash,
+  obtenerSesionesPorArea,
 } from '../services/supabase'
 import { sincronizarAreas, reintentarSesionesPendientes, reintentarLiberacionesPendientes } from '../services/sync'
 import { sha256, slugify } from '../utils/hash'
@@ -25,7 +26,7 @@ const REFRESH_MS = 15000
 const ICONOS_AREA_NUEVA = ['🏗️', '🚛', '📦', '🔧', '⚙️', '🏬', '🧱', '🛠️']
 
 export default function SesionSelector() {
-  const { sesion, sesiones, mostrarSelector, ocultarSelector, crearSesion, seleccionarSesion, salirSesion } = useSesion()
+  const { sesion, sesiones, mostrarSelector, ocultarSelector, crearSesion, seleccionarSesion, continuarSesionRemota, salirSesion } = useSesion()
 
   const [operadoresPorArea, setOperadoresPorArea] = useState<Record<string, string[]>>({})
   const [cierresHoy, setCierresHoy] = useState<Record<string, any>>({})
@@ -44,6 +45,9 @@ export default function SesionSelector() {
   const [reabriendo, setReabriendo] = useState(false)
 
   const [historialAreaId, setHistorialAreaId] = useState<string | null>(null)
+
+  const [sesionesArea, setSesionesArea] = useState<Record<string, SesionRemota[]>>({})
+  const [cargandoSesionesArea, setCargandoSesionesArea] = useState<string | null>(null)
 
   useEffect(() => {
     if (!mostrarSelector) return
@@ -108,6 +112,42 @@ export default function SesionSelector() {
     setPinReabrir('')
     const sugerido = sesion?.nombre_operador || sesiones[0]?.nombre_operador || ''
     setNombreNuevo(sugerido)
+
+    setCargandoSesionesArea(areaId)
+    obtenerSesionesPorArea(areaId).then(lista => {
+      setSesionesArea(prev => ({ ...prev, [areaId]: lista }))
+      setCargandoSesionesArea(null)
+    })
+  }
+
+  /**
+   * Continuar una sesión de la lista "sesiones de esta área" — puede ser de
+   * un día anterior y/o de otro celular. Respeta el mismo tope de 2
+   * operadores a la vez por área que "Entrar" (a menos que ya seas tú uno
+   * de los 2 ocupantes actuales).
+   */
+  async function handleContinuarRemota(s: SesionRemota) {
+    if (procesando) return
+    setProcesando(true)
+    try {
+      const frescos = await obtenerOperadoresHoyPorArea()
+      const ocupantesFrescos = frescos[s.area_id] || []
+      const yaEstaDentro = ocupantesFrescos.some(o => o.toLowerCase() === s.nombre_operador.toLowerCase())
+      if (ocupantesFrescos.length >= MAX_OPERADORES_POR_AREA && !yaEstaDentro) {
+        Alert.alert(
+          'Sala llena',
+          `${nombreArea(s.area_id)} ya tiene ${ocupantesFrescos.length} operadores hoy: ${ocupantesFrescos.join(', ')}.`
+        )
+        return
+      }
+      await continuarSesionRemota(s)
+      ocultarSelector()
+      setAreaExpandidaId(null)
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'No se pudo continuar esa sesión')
+    } finally {
+      setProcesando(false)
+    }
   }
 
   async function handleContinuar(areaId: string, nombreOperador: string) {
@@ -398,6 +438,35 @@ export default function SesionSelector() {
                           🔒 Esta sala ya tiene {MAX_OPERADORES_POR_AREA} operadores hoy.
                         </Text>
                       )}
+
+                      <View style={styles.sesionesAreaBox}>
+                        <Text style={styles.sesionesAreaLabel}>Sesiones de esta área (todos los celulares)</Text>
+                        {cargandoSesionesArea === area.id ? (
+                          <Text style={styles.sesionesAreaVacio}>Cargando…</Text>
+                        ) : (sesionesArea[area.id] || []).length === 0 ? (
+                          <Text style={styles.sesionesAreaVacio}>Sin sesiones anteriores registradas</Text>
+                        ) : (
+                          (sesionesArea[area.id] || []).map(s => {
+                            const fecha = new Date(s.created_at).toLocaleDateString('es-MX', {
+                              day: '2-digit', month: '2-digit', year: 'numeric',
+                            })
+                            return (
+                              <TouchableOpacity
+                                key={s.id}
+                                style={styles.sesionAreaRow}
+                                onPress={() => handleContinuarRemota(s)}
+                                disabled={procesando}
+                              >
+                                <View style={{ flex: 1, minWidth: 0 }}>
+                                  <Text style={styles.sesionAreaNombre} numberOfLines={1}>{s.nombre_operador}</Text>
+                                  <Text style={styles.sesionAreaFecha}>{fecha}{!s.liberada_at ? ' · abierta' : ''}</Text>
+                                </View>
+                                <Text style={styles.sesionAreaContinuar}>Continuar →</Text>
+                              </TouchableOpacity>
+                            )
+                          })
+                        )}
+                      </View>
                     </View>
                   )}
                 </View>
@@ -770,6 +839,51 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.danger,
     textAlign: 'center',
+  },
+  sesionesAreaBox: {
+    marginTop: 4,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    gap: 6,
+  },
+  sesionesAreaLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.textLight,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 2,
+  },
+  sesionesAreaVacio: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    fontStyle: 'italic',
+  },
+  sesionAreaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: SIZES.radiusSm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
+  },
+  sesionAreaNombre: {
+    fontWeight: '700',
+    fontSize: 13,
+    color: COLORS.text,
+  },
+  sesionAreaFecha: {
+    fontSize: 11,
+    color: COLORS.textLight,
+    marginTop: 1,
+  },
+  sesionAreaContinuar: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.primary,
   },
   roomNueva: {
     borderStyle: 'dashed',

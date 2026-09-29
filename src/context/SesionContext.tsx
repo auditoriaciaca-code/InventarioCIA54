@@ -1,9 +1,18 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import { Sesion } from '../types'
 import { getDatabase } from '../services/database'
-import { subirSesionInmediato, liberarSesionInmediato } from '../services/supabase'
+import { subirSesionInmediato, liberarSesionInmediato, reactivarSesionRemota } from '../services/supabase'
 import { randomUUID } from 'expo-crypto'
 import { hoyLocalISO } from '../utils/fechas'
+
+export interface SesionRemota {
+  id: string
+  nombre_operador: string
+  area_id: string
+  fecha: string
+  created_at: string
+  liberada_at?: string | null
+}
 
 interface SesionContextType {
   sesion: Sesion | null
@@ -13,6 +22,7 @@ interface SesionContextType {
   ocultarSelector: () => void
   crearSesion: (nombre: string, areaId: string) => Promise<Sesion>
   seleccionarSesion: (s: Sesion) => Promise<void>
+  continuarSesionRemota: (s: SesionRemota) => Promise<void>
   salirSesion: () => Promise<boolean>
   recargarSesiones: () => Promise<void>
 }
@@ -25,6 +35,7 @@ const SesionContext = createContext<SesionContextType>({
   ocultarSelector: () => {},
   crearSesion: async () => ({ id: '', nombre_operador: '', area_id: '', fecha: '', activa: 1, created_at: '' }),
   seleccionarSesion: async () => {},
+  continuarSesionRemota: async () => {},
   salirSesion: async () => false,
   recargarSesiones: async () => {},
 })
@@ -150,6 +161,37 @@ export function SesionProvider({ children }: { children: ReactNode }) {
   }
 
   /**
+   * Continúa una sesión que puede venir de OTRO celular (ej. elegida de la
+   * lista "sesiones de esta área", que trae todas las sesiones de todos los
+   * dispositivos) — a diferencia de seleccionarSesion(), esta puede no
+   * existir todavía en el SQLite local, así que la crea si hace falta. Deja
+   * la fecha original de esa sesión (se puede seguir agregando pesadas a un
+   * día anterior a propósito, por diseño) y reactiva el candado remoto por
+   * si ya estaba liberado.
+   */
+  async function continuarSesionRemota(s: SesionRemota) {
+    if (sesion && sesion.id !== s.id && sesion.area_id !== s.area_id) {
+      liberarConReintento(sesion.id)
+    }
+
+    const db = getDatabase()
+    await db.runAsync('UPDATE inv_sesiones SET activa = 0 WHERE activa = 1')
+    const existente = await db.getFirstAsync<{ id: string }>('SELECT id FROM inv_sesiones WHERE id = ?', [s.id])
+    if (existente) {
+      await db.runAsync('UPDATE inv_sesiones SET activa = 1 WHERE id = ?', [s.id])
+    } else {
+      await db.runAsync(
+        'INSERT INTO inv_sesiones (id, nombre_operador, area_id, fecha, activa, created_at, synced) VALUES (?, ?, ?, ?, 1, ?, 1)',
+        [s.id, s.nombre_operador, s.area_id, s.fecha, s.created_at]
+      )
+    }
+    reactivarSesionRemota(s.id)
+
+    setSesion({ id: s.id, nombre_operador: s.nombre_operador, area_id: s.area_id, fecha: s.fecha, activa: 1, created_at: s.created_at })
+    await recargarSesiones()
+  }
+
+  /**
    * Libera el candado de la sesión actual (botón "Salir"). Si falla por
    * falta de señal, NO cierra la sesión localmente — así la sala nunca
    * queda bloqueada para los demás sin que el operador se entere. Además
@@ -169,7 +211,7 @@ export function SesionProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <SesionContext.Provider value={{ sesion, sesiones, mostrarSelector, abrirSelector, ocultarSelector, crearSesion, seleccionarSesion, salirSesion, recargarSesiones }}>
+    <SesionContext.Provider value={{ sesion, sesiones, mostrarSelector, abrirSelector, ocultarSelector, crearSesion, seleccionarSesion, continuarSesionRemota, salirSesion, recargarSesiones }}>
       {children}
     </SesionContext.Provider>
   )
