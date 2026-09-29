@@ -24,6 +24,7 @@ export default function EnVivo() {
   const [fotosPorRegistro, setFotosPorRegistro] = useState<Map<string, Foto[]>>(new Map())
   const [conectado, setConectado] = useState(false)
   const [cargando, setCargando] = useState(true)
+  const [operadorActivo, setOperadorActivo] = useState<string | null>(null)
 
   useEffect(() => {
     let activo = true
@@ -105,7 +106,33 @@ export default function EnVivo() {
     }
   }, [registros])
 
-  const totalNeto = useMemo(() => registros.reduce((s, r) => s + (r.peso_bruto - r.tara), 0), [registros])
+  const operadoresLista = useMemo(() => {
+    const vistos = new Set<string>()
+    const lista: string[] = []
+    for (const r of registros) {
+      if (r.created_by && !vistos.has(r.created_by)) {
+        vistos.add(r.created_by)
+        lista.push(r.created_by)
+      }
+    }
+    return lista
+  }, [registros])
+
+  useEffect(() => {
+    if (operadorActivo && !operadoresLista.includes(operadorActivo)) {
+      setOperadorActivo(null)
+    }
+  }, [operadoresLista, operadorActivo])
+
+  const registrosFiltrados = useMemo(
+    () => (operadorActivo ? registros.filter(r => r.created_by === operadorActivo) : registros),
+    [registros, operadorActivo]
+  )
+
+  const totalNeto = useMemo(
+    () => registrosFiltrados.reduce((s, r) => s + (r.peso_bruto - r.tara), 0),
+    [registrosFiltrados]
+  )
 
   return (
     <div className="page">
@@ -130,6 +157,26 @@ export default function EnVivo() {
         </span>
       </div>
 
+      {operadoresLista.length > 1 && (
+        <div className="operador-tabs">
+          <button
+            className={`operador-tab${operadorActivo === null ? ' active' : ''}`}
+            onClick={() => setOperadorActivo(null)}
+          >
+            Todos
+          </button>
+          {operadoresLista.map(op => (
+            <button
+              key={op}
+              className={`operador-tab${op === operadorActivo ? ' active' : ''}`}
+              onClick={() => setOperadorActivo(op)}
+            >
+              👤 {op}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="resumen-cards">
         <div className="card-mini">
           <span className="card-mini-label">Fecha</span>
@@ -137,7 +184,7 @@ export default function EnVivo() {
         </div>
         <div className="card-mini">
           <span className="card-mini-label">Pesadas</span>
-          <span className="card-mini-value">{registros.length}</span>
+          <span className="card-mini-value">{registrosFiltrados.length}</span>
         </div>
         <div className="card-mini">
           <span className="card-mini-label">Total neto</span>
@@ -160,7 +207,7 @@ export default function EnVivo() {
             </tr>
           </thead>
           <tbody>
-            {registros.map(r => {
+            {registrosFiltrados.map(r => {
               const mat = MATERIAL_MAP.get(r.material_id)
               const fotos = fotosPorRegistro.get(r.id) || []
               return (
@@ -189,7 +236,7 @@ export default function EnVivo() {
                 </tr>
               )
             })}
-            {!cargando && registros.length === 0 && (
+            {!cargando && registrosFiltrados.length === 0 && (
               <tr>
                 <td colSpan={8} className="vacio">
                   Sin pesadas registradas para este filtro.
