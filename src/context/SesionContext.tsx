@@ -36,6 +36,24 @@ export function SesionProvider({ children }: { children: ReactNode }) {
   function abrirSelector() { setMostrarSelector(true) }
   function ocultarSelector() { setMostrarSelector(false) }
 
+  /**
+   * Libera una sesión y, si falla por falta de señal, la deja marcada
+   * localmente como "pendiente de liberar" para que
+   * reintentarLiberacionesPendientes() (sync.ts) la reintente después. Sin
+   * esto, un cambio de área con mala señal dejaba la sala anterior abierta
+   * para siempre sin ninguna segunda oportunidad — así se acumulaban varias
+   * sesiones "fantasma" del mismo celular en distintas áreas.
+   */
+  async function liberarConReintento(sesionId: string): Promise<boolean> {
+    const ok = await liberarSesionInmediato(sesionId)
+    if (!ok) {
+      try {
+        await getDatabase().runAsync('UPDATE inv_sesiones SET pendiente_liberar = 1 WHERE id = ?', [sesionId])
+      } catch {}
+    }
+    return ok
+  }
+
   useEffect(() => {
     recargarSesiones()
   }, [])
@@ -72,10 +90,10 @@ export function SesionProvider({ children }: { children: ReactNode }) {
 
     // Si venías de otra área, libera esa sesión sola — nadie puede estar
     // físicamente en 2 áreas a la vez. Best-effort: si falla por falta de
-    // señal, no bloquea entrar a la nueva área (queda como si se hubiera
-    // olvidado tocar "Salir", el mismo riesgo ya aceptado para ese caso).
+    // señal, no bloquea entrar a la nueva área (queda marcada pendiente y
+    // se reintenta sola, ver liberarConReintento).
     if (sesion && sesion.area_id !== areaId) {
-      liberarSesionInmediato(sesion.id)
+      liberarConReintento(sesion.id)
     }
 
     await db.runAsync(
@@ -110,9 +128,9 @@ export function SesionProvider({ children }: { children: ReactNode }) {
 
   async function seleccionarSesion(s: Sesion) {
     // Mismo caso que en crearSesion: si cambiaste de área, libera la sala
-    // anterior sola (best-effort).
+    // anterior sola (best-effort, con reintento si falla).
     if (sesion && sesion.id !== s.id && sesion.area_id !== s.area_id) {
-      liberarSesionInmediato(sesion.id)
+      liberarConReintento(sesion.id)
     }
 
     const db = getDatabase()
@@ -125,11 +143,13 @@ export function SesionProvider({ children }: { children: ReactNode }) {
   /**
    * Libera el candado de la sesión actual (botón "Salir"). Si falla por
    * falta de señal, NO cierra la sesión localmente — así la sala nunca
-   * queda bloqueada para los demás sin que el operador se entere.
+   * queda bloqueada para los demás sin que el operador se entere. Además
+   * queda marcada pendiente para reintentarse sola más tarde, por si el
+   * operador no vuelve a intentar "Salir" manualmente.
    */
   async function salirSesion(): Promise<boolean> {
     if (!sesion) return true
-    const ok = await liberarSesionInmediato(sesion.id)
+    const ok = await liberarConReintento(sesion.id)
     if (!ok) return false
 
     const db = getDatabase()

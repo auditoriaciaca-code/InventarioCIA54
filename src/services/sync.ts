@@ -4,6 +4,7 @@ import {
   syncFotos,
   subirRegistroInmediato,
   subirSesionInmediato,
+  liberarSesionInmediato,
   obtenerLotesPorArea,
   subirFotoStorage,
   obtenerAreas,
@@ -81,6 +82,29 @@ export async function reintentarSesionesPendientes(): Promise<void> {
       })
       if (ok) {
         await db.runAsync('UPDATE inv_sesiones SET synced = 1 WHERE id = ?', [s.id])
+      }
+    }
+  } catch {}
+}
+
+/**
+ * Reintenta liberar sesiones que quedaron pendientes de cerrar (el cierre
+ * automático al cambiar de área, o el botón "Salir", fallaron por falta de
+ * señal). Sin esto, un celular podía cambiar de sala y dejar la anterior
+ * abierta para siempre sin darse cuenta — así se acumulaban varias sesiones
+ * "fantasma" del mismo celular en distintas áreas. Se llama junto con el
+ * reintento de sesiones pendientes de subir.
+ */
+export async function reintentarLiberacionesPendientes(): Promise<void> {
+  try {
+    const db = getDatabase()
+    const pendientes = await db.getAllAsync<{ id: string }>(
+      'SELECT id FROM inv_sesiones WHERE pendiente_liberar = 1'
+    )
+    for (const s of pendientes) {
+      const ok = await liberarSesionInmediato(s.id)
+      if (ok) {
+        await db.runAsync('UPDATE inv_sesiones SET pendiente_liberar = 0 WHERE id = ?', [s.id])
       }
     }
   } catch {}
@@ -189,6 +213,7 @@ export async function sincronizar(): Promise<{ ok: boolean; mensaje: string }> {
     const db = getDatabase()
 
     await reintentarSesionesPendientes()
+    await reintentarLiberacionesPendientes()
 
     const registrosPendientes = await db.getAllAsync<any>(
       "SELECT * FROM inv_registros WHERE synced = 0"

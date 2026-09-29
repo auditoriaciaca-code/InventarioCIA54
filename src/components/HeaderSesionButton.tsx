@@ -3,7 +3,7 @@ import { TouchableOpacity, Text, StyleSheet } from 'react-native'
 import { useSesion } from '../context/SesionContext'
 import { nombreArea } from '../constants/areas'
 import { obtenerOperadoresHoyPorArea } from '../services/supabase'
-import { reintentarSesionesPendientes } from '../services/sync'
+import { reintentarSesionesPendientes, reintentarLiberacionesPendientes } from '../services/sync'
 
 const REFRESH_MS = 20000
 
@@ -23,6 +23,7 @@ export default function HeaderSesionButton() {
       // operador — reintenta la sesión pendiente aquí también, no solo
       // mientras el lobby está abierto.
       await reintentarSesionesPendientes()
+      await reintentarLiberacionesPendientes()
       const mapa = await obtenerOperadoresHoyPorArea()
       const otros = (mapa[sesion!.area_id!] || []).filter(
         n => n.toLowerCase() !== sesion!.nombre_operador.toLowerCase()
