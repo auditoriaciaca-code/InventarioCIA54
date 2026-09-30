@@ -1,7 +1,8 @@
 # CIA A.C.A — Control de Inventario
 
-App Android interna para pesaje con báscula, desarrollada en React Native / Expo SDK 54.
-Propietario: **Ingeniero de la planta** (usuario final: equipo de inventario).
+App Android interna para pesaje con báscula, desarrollada en React Native / Expo SDK 54,
+más una plataforma web de supervisión (`web/`, ver sección 8) para ver el inventario en vivo.
+Propietario: **Ingeniero de la planta** (usuario final: equipo de inventario + supervisor).
 Idioma de comunicación: **Español**.
 
 ---
@@ -40,15 +41,19 @@ InventarioCIA54/
 │   │   ├── QrScanner           # Modal de cámara para QR/barcode
 │   │   ├── ReferenciaSelector  # Lista de referencias con búsqueda
 │   │   ├── ScaleReader         # Lector OCR de display de báscula
-│   │   ├── SesionSelector      # Selector de sesión (nombre + área) al iniciar
+│   │   ├── SesionSelector      # Selector de sesión por área, en 2 pasos (ver sección 7)
+│   │   ├── HistorialAreaModal  # Todas las sesiones de un área (cualquier celular), agrupadas por sesión — tocar una continúa esa fecha
 │   │   ├── HeaderSesionButton  # Pill del header con operador + área activa
-│   │   └── ComparacionListener # Escucha en tiempo real el doble conteo (sin UI)
+│   │   ├── ComparacionTabla    # Vista "Tú vs compañero" del doble conteo (swipe desde Rápido)
+│   │   ├── DetalleMaterial     # Drill-down de Resumen por material → referencia → pesadas individuales
+│   │   └── NumericKeypad, CameraCapture, MaterialPickerPanel, QuickActionsFab  # Piezas del módulo "Rápido"
 │   ├── constants/
 │   │   ├── materiales.ts       # Catálogo de categorías y referencias
 │   │   ├── areas.ts            # Catálogo fijo de las 5 áreas del inventario general
 │   │   └── theme.ts            # Colores, tamaños
 │   ├── context/
-│   │   └── SesionContext.tsx    # Contexto de sesión activa (operador + área)
+│   │   ├── SesionContext.tsx        # Sesión activa (operador + área) + continuarSesionRemota
+│   │   └── ComparacionesContext.tsx # Suscripción Realtime al doble conteo por área (semáforo + alertas)
 │   ├── screens/
 │   │   ├── RegistroScreen      # Captura de pesada (principal)
 │   │   ├── ChatRegistroScreen  # Registro rápido tipo chat ("Rápido")
@@ -57,11 +62,12 @@ InventarioCIA54/
 │   ├── services/
 │   │   ├── database.ts         # SQLite schema + migraciones
 │   │   ├── supabase.ts         # Cliente Supabase, sync y subida inmediata
-│   │   └── sync.ts             # Lógica de sincronización manual + en segundo plano
+│   │   └── sync.ts             # Lógica de sincronización manual + en segundo plano + reintentos pendientes
 │   └── types/
 │       └── index.ts            # Interfaces TypeScript
+├── web/                         # Plataforma de supervisión (Vite + React), ver sección 8
 ├── google-apps-script/
-│   ├── WebhookReceiver.gs      # Receptor de webhooks de Supabase (tablero del supervisor)
+│   ├── WebhookReceiver.gs      # Receptor de webhooks de Supabase (respaldo en Sheets, anterior a /web)
 │   └── README.md               # Pasos de despliegue en Google Sheets
 ├── supabase-migration.sql      # Migración de la BD en Supabase
 └── AGENTS.md                   # Este archivo — contexto para la IA
@@ -129,21 +135,34 @@ InventarioCIA54/
 - El campo `synced` marca registros pendientes de subir
 
 ### 7. Inventario General por Áreas + Doble Conteo Ciego
-- El selector de sesión (`SesionSelector`) es por **área**, en 2 pasos: 1) tarjetas grandes por área (muestra quién ya está trabajando ahí hoy o "Sin operadores hoy"), 2) al elegir un área, botones grandes por cada operador ya activo ("👤 Nombre — Continuar pesando") más "+ Nuevo operador" si hay cupo (máx 2). El historial completo de sesiones queda colapsado detrás de un link "Ver historial"
-- `inv_sesiones` sí se sube a Supabase (best-effort, `subirSesionInmediato`) para que un celular pueda ver qué operadores ya están en cada área hoy (`obtenerOperadoresHoyPorArea`)
+- El selector de sesión (`SesionSelector`) es por **área**, en 2 pasos: 1) tarjetas grandes por área (muestra quién ya está trabajando ahí hoy o "Sin operadores hoy"), 2) al elegir un área, botones grandes por cada operador ya activo hoy ("👤 Nombre — Continuar pesando") más "+ Nuevo operador" si hay cupo (máx 2, siempre crea una sesión de **hoy**)
+- Un botón "📜 Ver historial y continuar otra sesión" abre `HistorialAreaModal`, que muestra **todas** las sesiones de esa área de **cualquier celular** (no solo hoy), agrupadas por sesión (no por día) con su total pesado y fecha de última pesada. Tocar una sesión vieja (`continuarSesionRemota` en `SesionContext`) permite seguir agregando pesadas a esa fecha y ver su historial — si la sesión no existe localmente en ese celular, se inserta como ya sincronizada (`synced=1`). Si la sesión elegida no es de hoy, pide confirmación (`Alert.alert`) antes de entrar, para evitar continuar una fecha vieja por error
+- Al abrir la app, si la última sesión activa localmente **no es de hoy**, el lobby se mantiene visible en vez de auto-entrar (guard en `SesionContext.recargarSesiones`, comparando `fecha`/`created_at` contra la fecha local) — antes la app entraba directo a la última sesión sin importar su fecha
+- `inv_sesiones` sí se sube a Supabase (best-effort, `subirSesionInmediato`) para que un celular pueda ver qué operadores ya están en cada área hoy (`obtenerOperadoresHoyPorArea`) o en el historial completo (`obtenerSesionesPorArea`)
 - **Candado por operador**: un nombre queda "ocupado" en su área hasta que se libera explícitamente con el botón "🚪 Salir de mi sesión" (columna `liberada_at` en `inv_sesiones`, solo remota). Si otro celular nunca ha sido esa persona (no está en su historial local), el botón de esa persona aparece bloqueado (🔒) y no se puede tocar — **a propósito no hay liberación automática por inactividad**: si a alguien se le muere el teléfono sin tocar "Salir", esa sala queda bloqueada hasta liberarla manualmente desde Supabase (columna `liberada_at` de esa fila)
 - **Excepción**: cambiar de área SÍ libera sola la sesión anterior (nadie puede estar en 2 áreas a la vez) — pasa dentro de `crearSesion`/`seleccionarSesion` en `SesionContext.tsx`, best-effort. Además, "+ Nuevo operador" sugiere automáticamente el nombre de quien ya usa ese celular (`sesion.nombre_operador` o el más reciente del historial) en vez de dejar el campo vacío
 - `seleccionarSesion` (en `SesionContext`) persiste cuál sesión queda `activa=1` en SQLite — necesario para que "retomar" funcione bien tras cerrar/recargar la app
-- Cuando 2 operadores de la misma área pesan el **mismo material y la misma referencia exacta** (`material_id` + `referencia_codigo`, ya no solo el material), un **trigger en Supabase** (`fn_emparejar_registro`, ver `supabase-migration.sql`) los empareja por **el peso más parecido** (no por orden de llegada) dentro del mismo día, y calcula la diferencia entre sus pesos netos. Si eligen referencias distintas para lo que en la práctica es el mismo ítem, esas pesadas ya no se comparan entre sí (antes sí se comparaban, marcadas con `misma_referencia=false`)
+- Cuando 2 operadores de la misma área pesan el **mismo material y la misma referencia exacta** (`material_id` + `referencia_codigo`, ya no solo el material) **el mismo día calendario** (zona horaria `America/Bogota`, para no emparejar con datos de días distintos), un **trigger en Supabase** los empareja por **el peso más parecido** (no por orden de llegada), y calcula la diferencia entre sus pesos netos. Si eligen referencias distintas para lo que en la práctica es el mismo ítem, esas pesadas ya no se comparan entre sí
+- La lógica de "buscar y armar pareja" vive en una función compartida, `fn_intentar_emparejar(p_registro_id TEXT)` (¡el parámetro es `TEXT`, no `UUID` — `inv_registros.id` es texto!), llamada tanto por el trigger de INSERT (`fn_emparejar_registro`) como por el de UPDATE de peso (`fn_recalcular_comparacion`) cuando el registro editado **nunca había tenido pareja** — antes, editar el peso de una pesada huérfana no la reintentaba emparejar aunque quedara con el peso exacto de su verdadera pareja
 - Si una pesada nueva encaja mejor con alguien que ya tenía pareja, le "roba" el lugar: la comparación vieja queda `estado='anulada'` (historial, no se borra) y quien perdió su pareja queda libre para la siguiente — esto corrige solo los casos de pesadas cargadas fuera de orden (ej. un operador se atrasa y carga varias de golpe)
-- Si la diferencia supera **1kg**, se marca `estado='alerta'` en `inv_comparaciones` y ambos celulares de esa área reciben una alerta en tiempo real (`ComparacionListener.tsx`, vía Supabase Realtime, con respaldo por polling cada 20s)
+- El `created_at` de una comparación nueva se fija explícitamente a la fecha real de la pesada más reciente de las dos (`GREATEST` de ambos `created_at`), no al momento en que corre el emparejamiento — importante porque `fn_intentar_emparejar` se puede invocar días después de la pesada real (ej. al reparar a mano un registro huérfano desde el SQL Editor); sin este detalle, la comparación aparece con fecha "de hoy" en la plataforma web aunque sea inventario viejo
+- Si la diferencia supera **1kg**, se marca `estado='alerta'` en `inv_comparaciones` y ambos celulares de esa área reciben una alerta en tiempo real (vía `ComparacionesContext.tsx`, Supabase Realtime, con respaldo por polling cada 20s)
 - No hay lotes ni códigos que identifiquen la pesada física — el emparejamiento asume que el peso más parecido del otro operador (mismo día, misma área+material) es la pareja correcta, y se autocorrige si llega una mejor coincidencia después (ver "corrección sobre la marcha" arriba). Si dos pesadas distintas del mismo material pesan casi lo mismo por coincidencia, sí se pueden emparejar mal sin que haya forma de saberlo (no hay lote que lo desmienta); si un operador se salta una pesada por completo (no solo la carga tarde), puede quedar alguien sin pareja el resto del turno (ver `v_registros_sin_pareja` en Supabase para detectarlo)
 - En el módulo **Rápido** (chat), cada burbuja de registro muestra un semáforo (🟢🟡🔴) junto a la hora si ya tiene comparación: verde = 0kg de diferencia, amarillo = hasta 2kg, rojo = 2kg o más. Tocar el punto muestra el detalle (con quién, sus pesos, diferencia, cuándo). Los datos de comparación viven en `src/context/ComparacionesContext.tsx` (una sola suscripción Realtime por área, compartida por la alerta y el semáforo — reemplazó al antiguo `ComparacionListener.tsx`)
 - El módulo **Rápido** permite tomar varias fotos por pesada (hasta `MAX_FOTOS_POR_MENSAJE = 5`, ver `ChatRegistroScreen.tsx`) — se acumulan en el composer antes de enviar, cada una queda como una fila en `inv_fotos` con su `orden`, y la burbuja muestra la primera con un badge "+N" si hay más (tocar abre `PhotoViewer`, que ya soporta varias con swipe)
 - La barra de contenedor de "Rápido" vive abajo, junto al contador de registros; "cambiar" abre un panel deslizándose desde abajo (`pickerVisible` en `ChatRegistroScreen.tsx`) con pills sutiles en vez de las tarjetas grandes de `ContainerSelector` (esas siguen usándose tal cual en `RegistroScreen` y en la confirmación inicial de contenedor de Rápido)
 - Deslizar el chat de "Rápido" hacia la izquierda abre una vista de pantalla completa "Tú vs compañero" (`src/components/ComparacionTabla.tsx`): una fila por cada pesada de hoy en esa área (emparejada o no — las que no tienen pareja aún salen como "VACÍO" del lado que falta), con un punto de color igual al semáforo del chat y la diferencia en kg a la derecha. Consulta `obtenerRegistrosHoyPorArea`/`obtenerComparacionesHoyPorArea`/`obtenerOperadoresHoyPorArea` en `supabase.ts` porque necesita ver las pesadas de AMBOS operadores, no solo las propias (a diferencia del chat normal). Cada lado muestra el **nombre corto de la referencia** (ej. "COBRE 1C"), resuelto del catálogo local (`CATEGORIA_MAP`) por código — `inv_comparaciones` solo guarda el código, no la descripción
 - El arrastre entre el chat y esa tabla es tipo WhatsApp (sigue al dedo en vivo, no un simple fade): chat y tabla viven lado a lado dentro de una fila de `2× el ancho de pantalla`, movida por un solo `Animated.Value` (`swipeX`) según `PanResponder` — sin librerías nuevas (no usa `react-native-gesture-handler`/`reanimated`, así que el arrastre corre en el hilo de JS, no el nativo). La tabla solo se monta (`panelMontado`) mientras se está arrastrando o está abierta, para no consultar Supabase de fondo si nunca se abre
-- Un supervisor ve todo en vivo en una **hoja de Google** (sin hosting propio) vía Database Webhooks de Supabase → Google Apps Script → Sheets. Ver `google-apps-script/README.md`
+- Un supervisor puede ver todo en vivo también en una **hoja de Google** (sin hosting propio) vía Database Webhooks de Supabase → Google Apps Script → Sheets — respaldo anterior a la plataforma `/web` (sección 8), que hoy es la vista principal. Ver `google-apps-script/README.md`
+
+### 7.1 Patrón de sincronización: best-effort + bandera pendiente + reintento
+Toda subida "best-effort, un solo intento, sin bloquear la UI" (`subirSesionInmediato`, `liberarSesionInmediato`, subida de lotes) sigue el mismo patrón: si falla, se marca una columna `pendiente_*`/`synced=0`, y se reintenta desde **varios puntos que siempre están vivos** sin importar en qué pantalla esté el usuario — no basta un solo lugar, porque el usuario puede estar en cualquier pestaña cuando vuelve la señal:
+- `HeaderSesionButton` (vive en el header de todas las tabs): poll cada 20s
+- `SesionSelector`: poll cada 15s mientras el lobby está abierto
+- Botón manual "🔄 Sincronizar" en Inventario
+- `ChatRegistroScreen`: intervalo de 15s dentro de su `useFocusEffect`, específico para lotes
+
+Esto cerró varios bugs reales de un test de campo: una sesión que nunca aparecía en el lobby de otro celular, y **ediciones de una pesada que no se reflejaban en la plataforma web** (`handleSaveEdit` en `ChatRegistroScreen`/`InventarioScreen` ahora llama a `subirEnSegundoPlano` después del `UPDATE` local — antes solo el registro nuevo se subía solo, no sus ediciones posteriores).
 
 ---
 
@@ -155,6 +174,29 @@ Bottom Tabs (4 pantallas):
 2. **📋 Inventario** — Título: "Inventario"
 3. **📊 Resumen** — Título: "Resumen"
 4. **💬 Rápido** — Título: "Registro Rápido" (captura tipo chat, `ChatRegistroScreen`)
+
+---
+
+## 8. Plataforma Web de Supervisión (`/web`)
+
+App aparte, en la carpeta `web/`: Vite + React 19 + `react-router-dom` (`HashRouter`) + `@supabase/supabase-js`, sin backend propio — lee directo de Supabase (mismo proyecto que la app móvil) con Realtime para las vistas en vivo. Se despliega sola a **GitHub Pages** vía GitHub Actions (`.github/workflows/deploy-web.yml`) en cada push que toque `web/**` — no hay paso manual de "producción" como en la app móvil (EAS).
+
+**Rutas** (todas bajo `web/src/pages/`):
+| Ruta | Página | Qué muestra |
+|------|--------|-------------|
+| `/` | `EnVivo` | Pesadas del día en vivo, filtro por fecha/área/operador (tabs, reusa el patrón de `Borrador`) |
+| `/doble-conteo` | `DobleConteo` | `inv_comparaciones` del día: coinciden / con diferencia / anuladas |
+| `/lotes` | `Lotes` | Carga de lotes esperados por área (CSV, pegar desde Excel) y su estado pendiente/pesado |
+| `/borrador` | `Borrador` | Vista previa del Excel final por operador, antes de generarlo |
+
+**Sistema de diseño** (`web/src/index.css` + `App.css`): tokens CSS (`--brand` verde corporativo `#1a5f2a`, escalas de radio/sombra/texto, `--ease` para transiciones), tipografía Inter (Google Fonts). **Excepción a propósito**: las clases `.hoja-*` (la vista previa del Excel en Borrador) mantienen su azul original `#1f4e79` **sin tocar**, porque replican la plantilla real impresa que usa la empresa — no son parte del rebranding verde.
+
+**Fondo animado** (`web/src/components/IndustrialBackground.tsx`): canvas fijo de pantalla completa detrás de todo el contenido — brillo metálico que sigue el mouse (con órbita automática si no hay interacción), chispas/partículas y una textura real de chatarra (`assets/images/scrap-metal-dark.jpg`) superpuesta con `mix-blend-mode: overlay`. Paleta **neutra** (grafito/negro, sin tinte de color) — el verde de marca vive solo en la UI (topbar, botones), no en el fondo. Respeta `prefers-reduced-motion` (degradado estático, sin canvas ni listeners).
+
+Otras notas:
+- `EnVivo` tiene tabs de operador (igual que Borrador) para no mezclar las pesadas de los dos operadores de una misma área en una sola tabla
+- `Lotes` escribe en `inv_lotes` (solo Supabase, no hay tabla local en la app móvil); el trigger `fn_marcar_lote_pesado` en Supabase marca un lote como `pesado` apenas llega un `inv_registros` con ese `lote_codigo`
+- Al verificar visualmente cambios de CSS/diseño antes de publicar, usar Playwright contra `vite preview` — cuidado: las rutas son `/`, `/doble-conteo`, `/lotes`, `/borrador` (no `/en-vivo`)
 
 ---
 
@@ -267,9 +309,10 @@ Builds recientes:
 
 - **URL**: `https://lkrjzpxzxurzjoswpeku.supabase.co`
 - **Anon Key**: `sb_publishable_6cWubKMz8T6lJqVE6HadnA_MX47WHQz`
-- **Tablas**: `inv_registros`, `inv_fotos`, `inv_sesiones` (espejo de SQLite local, las 3 sincronizan best-effort), `inv_areas` y `inv_comparaciones` (solo remotas, alimentadas por el trigger de emparejamiento)
-- **Sincronización**: subida inmediata best-effort al guardar + manual (botón) o automática (configurable en Resumen) como respaldo
-- **Realtime**: habilitado sobre `inv_comparaciones` (primer uso de Realtime en el proyecto) para las alertas de doble conteo
+- **Tablas**: `inv_registros`, `inv_fotos`, `inv_sesiones` (espejo de SQLite local, las 3 sincronizan best-effort), `inv_areas`, `inv_comparaciones` (doble conteo), `inv_lotes` (checklist de lotes por área, alimenta y alimentada por `/web`), `inv_cierres` (cierre de inventario por área+día) e `inv_config` (config global, ej. hash de la clave de supervisor) — estas últimas 4 solo existen en Supabase, no en SQLite local
+- **Storage**: bucket `inv_fotos` es **público** (desde 2026-09) con políticas `anon` de insert/select/update, para que una foto tomada en un celular se vea en cualquier otro y en `/web` — antes solo se sincronizaba el metadato, nunca el archivo
+- **Sincronización**: subida inmediata best-effort al guardar + manual (botón) o automática (configurable en Resumen) como respaldo; ver sección 7.1 para el patrón de reintento de las subidas best-effort
+- **Realtime**: habilitado sobre `inv_comparaciones`, `inv_registros`, `inv_lotes`, `inv_areas` y `inv_cierres` — alimenta tanto las alertas de doble conteo en la app móvil como las vistas en vivo de `/web`
 
 ---
 
@@ -287,10 +330,10 @@ Builds recientes:
 
 ## Pendientes / Mejoras Futuras
 
-- Subir fotos a Supabase Storage (actualmente solo metadatos)
 - Login de usuarios con roles
 - Mejora OCR: Google Cloud Vision (requiere tarjeta de crédito)
 - Firma digital en reportes
 - Publicación en Play Store (opcional)
 - Los borrados de registros nunca se sincronizan a Supabase (limitación preexistente) — puede generar una comparación "fantasma" si se borra localmente un registro ya emparejado
-- Si Supabase Realtime no conecta en algún dispositivo (primer uso en el proyecto), el respaldo por polling cubre el caso pero con hasta 20s de retraso; si el problema persiste, revisar `react-native-url-polyfill`
+- Si Supabase Realtime no conecta en algún dispositivo, el respaldo por polling cubre el caso pero con hasta 20s de retraso; si el problema persiste, revisar `react-native-url-polyfill`
+- Liberar una sesión "muerta" (celular que se quedó sin batería sin tocar "Salir") hoy requiere editar `liberada_at` a mano en Supabase — quedó pendiente diseñar un botón de "liberar con clave de supervisor" desde la propia app

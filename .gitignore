@@ -42,3 +42,6 @@ app-example
 # generated native folders
 /ios
 /android
+
+# herramientas locales de Claude Code (skills, etc.) — no son parte de la app
+/.claude/
