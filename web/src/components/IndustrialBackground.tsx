@@ -2,14 +2,14 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import scrapTexture from '../assets/images/scrap-metal-dark.jpg'
 import './IndustrialBackground.css'
 
-// Paleta industrial oscura derivada del verde corporativo (ver --brand en index.css),
-// no la paleta ámbar/neutra del proyecto original de referencia.
+// Paleta neutra (grafito/acero), sin tinte de color — el verde de marca
+// queda solo en la UI (topbar, botones), no en el fondo.
 const TONES = {
-  base: '#050a07',
-  primary: '#0f2a1a',
-  secondary: '#173a24',
-  specular: 'rgba(200, 255, 220, 0.09)',
-  accentGlow: 'rgba(58, 168, 92, 0.4)',
+  base: '#050505',
+  primary: '#17171a',
+  secondary: '#26262b',
+  specular: 'rgba(255, 255, 255, 0.09)',
+  accentGlow: 'rgba(210, 210, 215, 0.35)',
   sparkColor: '#ffb84d',
   gridLine: 'rgba(255, 255, 255, 0.025)',
 }

@@ -1,7 +1,7 @@
 .industrial-bg {
   position: relative;
   min-height: 100svh;
-  background: radial-gradient(ellipse at 50% 40%, #173a24 0%, #0f2a1a 55%, #050a07 100%);
+  background: radial-gradient(ellipse at 50% 40%, #26262b 0%, #17171a 55%, #050505 100%);
 }
 
 .industrial-bg-canvas {
@@ -19,7 +19,7 @@
   z-index: 1;
   background-size: cover;
   background-position: center;
-  opacity: 0.22;
+  opacity: 0.35;
   mix-blend-mode: overlay;
   pointer-events: none;
 }
@@ -29,7 +29,7 @@
   inset: 0;
   z-index: 2;
   pointer-events: none;
-  background: radial-gradient(ellipse at center, transparent 35%, rgba(4, 8, 5, 0.55) 100%);
+  background: radial-gradient(ellipse at center, transparent 35%, rgba(5, 5, 5, 0.55) 100%);
 }
 
 .industrial-bg-content {
@@ -49,6 +49,6 @@
     position: fixed;
     inset: 0;
     z-index: 0;
-    background: radial-gradient(ellipse at 50% 40%, #173a24 0%, #0f2a1a 55%, #050a07 100%);
+    background: radial-gradient(ellipse at 50% 40%, #26262b 0%, #17171a 55%, #050505 100%);
   }
 }
