@@ -965,3 +965,166 @@ BEGIN
    WHERE id IN (v_y.id, v_new.id);
 END;
 $$;
+
+-- =====================================================================
+-- REINTENTAR EMPAREJAMIENTO AL "ROBAR" Y AL EDITAR REFERENCIA/MATERIAL  (2026-10-05)
+-- Bug real encontrado en una sesión de pruebas: una corrección de
+-- referencia (15002 → 15003) nunca volvía a comparar esa pesada, porque
+-- fn_recalcular_comparacion solo reaccionaba a cambios de PESO. Y cuando
+-- el "robo" (ver bloque "CORRECCIÓN SOBRE LA MARCHA") le quita la pareja
+-- a alguien porque llegó una pesada que encaja mejor, a quien pierde su
+-- lugar nunca se le reintentaba buscar una pareja nueva — se quedaba
+-- "VACÍO" para siempre, aunque después llegara alguien con quien sí
+-- debería haber emparejado. Ambos bugs se combinan: una edición dispara
+-- un reacomodo, y como nada reintenta automáticamente, varias pesadas
+-- después quedan sin comparar.
+-- =====================================================================
+
+-- 1) fn_intentar_emparejar: al robarle la pareja a alguien, reintentar
+--    emparejar a quien quedó huérfano, en vez de abandonarlo.
+CREATE OR REPLACE FUNCTION fn_intentar_emparejar(p_registro_id TEXT)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_tolerancia    REAL := 1.0;
+  v_new           inv_registros%ROWTYPE;
+  v_mejor_id      TEXT;
+  v_y             inv_registros%ROWTYPE;
+  v_comp_previa   UUID;
+  v_pareja_previa TEXT;
+  v_comp_id       UUID;
+  v_dif           REAL;
+  v_fecha_comp    TIMESTAMPTZ;
+BEGIN
+  SELECT * INTO v_new FROM inv_registros WHERE id = p_registro_id;
+  IF NOT FOUND OR COALESCE(v_new.area_id,'') = '' OR v_new.emparejado THEN
+    RETURN;
+  END IF;
+
+  SELECT r.id
+    INTO v_mejor_id
+  FROM inv_registros r
+  LEFT JOIN inv_comparaciones c ON c.id = r.comparacion_id
+  WHERE r.area_id           = v_new.area_id
+    AND r.material_id       = v_new.material_id
+    AND r.referencia_codigo = v_new.referencia_codigo
+    AND r.sesion_id        <> v_new.sesion_id
+    AND r.id               <> v_new.id
+    AND (r.created_at AT TIME ZONE 'America/Bogota')::date = (v_new.created_at AT TIME ZONE 'America/Bogota')::date
+    AND (r.emparejado = FALSE OR ABS(r.peso_neto - v_new.peso_neto) < c.diferencia)
+  ORDER BY ABS(r.peso_neto - v_new.peso_neto) ASC
+  LIMIT 1;
+
+  IF v_mejor_id IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_y FROM inv_registros WHERE id = v_mejor_id FOR UPDATE;
+
+  IF v_y.emparejado THEN
+    v_comp_previa := v_y.comparacion_id;
+    SELECT CASE WHEN registro_a_id = v_mejor_id THEN registro_b_id ELSE registro_a_id END
+      INTO v_pareja_previa
+    FROM inv_comparaciones WHERE id = v_comp_previa;
+    UPDATE inv_registros SET emparejado = FALSE, comparacion_id = NULL WHERE id = v_pareja_previa;
+    UPDATE inv_comparaciones SET estado = 'anulada', actualizado_at = NOW() WHERE id = v_comp_previa;
+  END IF;
+
+  v_dif := ABS(v_y.peso_neto - v_new.peso_neto);
+  v_fecha_comp := GREATEST(v_y.created_at, v_new.created_at);
+
+  INSERT INTO inv_comparaciones (
+    area_id, material_id,
+    registro_a_id, registro_b_id, sesion_a_id, sesion_b_id,
+    operador_a, operador_b, referencia_a, referencia_b, misma_referencia,
+    peso_a, peso_b, diferencia, tolerancia, estado, created_at
+  ) VALUES (
+    v_new.area_id, v_new.material_id,
+    v_y.id, v_new.id, v_y.sesion_id, v_new.sesion_id,
+    COALESCE(v_y.created_by,''), COALESCE(v_new.created_by,''),
+    COALESCE(v_y.referencia_codigo,''), COALESCE(v_new.referencia_codigo,''),
+    TRUE,
+    v_y.peso_neto, v_new.peso_neto,
+    v_dif, v_tolerancia,
+    CASE WHEN v_dif > v_tolerancia THEN 'alerta' ELSE 'ok' END,
+    v_fecha_comp
+  )
+  RETURNING id INTO v_comp_id;
+
+  UPDATE inv_registros
+     SET emparejado = TRUE, comparacion_id = v_comp_id
+   WHERE id IN (v_y.id, v_new.id);
+
+  -- Reintento inmediato: a quien le robamos la pareja (si aplica) merece
+  -- la misma oportunidad de encontrar una nueva, no quedar abandonado.
+  IF v_pareja_previa IS NOT NULL THEN
+    PERFORM fn_intentar_emparejar(v_pareja_previa);
+  END IF;
+END;
+$$;
+
+-- 2) fn_recalcular_comparacion: reaccionar también a cambios de
+--    referencia/material, no solo de peso. Si cambia la referencia o el
+--    material de un registro ya emparejado, esa pareja pudo dejar de ser
+--    válida (ya no es "misma referencia exacta") — se suelta y se
+--    reintenta desde cero para ambos lados, en vez de solo actualizar
+--    el peso de una comparación que ya no tiene sentido.
+CREATE OR REPLACE FUNCTION fn_recalcular_comparacion()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_pareja_id TEXT;
+BEGIN
+  BEGIN
+    IF NEW.peso_neto IS NOT DISTINCT FROM OLD.peso_neto
+       AND NEW.referencia_codigo IS NOT DISTINCT FROM OLD.referencia_codigo
+       AND NEW.material_id IS NOT DISTINCT FROM OLD.material_id THEN
+      RETURN NULL;
+    END IF;
+
+    IF NEW.comparacion_id IS NOT NULL AND (
+         NEW.referencia_codigo IS DISTINCT FROM OLD.referencia_codigo
+         OR NEW.material_id IS DISTINCT FROM OLD.material_id
+       ) THEN
+      SELECT CASE WHEN registro_a_id = NEW.id THEN registro_b_id ELSE registro_a_id END
+        INTO v_pareja_id
+      FROM inv_comparaciones WHERE id = NEW.comparacion_id;
+
+      UPDATE inv_comparaciones SET estado = 'anulada', actualizado_at = NOW() WHERE id = NEW.comparacion_id;
+      UPDATE inv_registros SET emparejado = FALSE, comparacion_id = NULL WHERE id = NEW.id;
+
+      PERFORM fn_intentar_emparejar(NEW.id);
+      IF v_pareja_id IS NOT NULL THEN
+        PERFORM fn_intentar_emparejar(v_pareja_id);
+      END IF;
+      RETURN NULL;
+    END IF;
+
+    IF NEW.comparacion_id IS NULL THEN
+      PERFORM fn_intentar_emparejar(NEW.id);
+      RETURN NULL;
+    END IF;
+
+    UPDATE inv_comparaciones c
+       SET peso_a = CASE WHEN c.registro_a_id = NEW.id THEN NEW.peso_neto ELSE c.peso_a END,
+           peso_b = CASE WHEN c.registro_b_id = NEW.id THEN NEW.peso_neto ELSE c.peso_b END
+     WHERE c.id = NEW.comparacion_id;
+
+    UPDATE inv_comparaciones c
+       SET diferencia     = ABS(c.peso_a - c.peso_b),
+           estado         = CASE WHEN ABS(c.peso_a - c.peso_b) > c.tolerancia THEN 'alerta' ELSE 'ok' END,
+           actualizado_at = NOW()
+     WHERE c.id = NEW.comparacion_id;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'fn_recalcular_comparacion falló para % : %', NEW.id, SQLERRM;
+  END;
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_recalcular_comparacion ON inv_registros;
+CREATE TRIGGER trg_recalcular_comparacion
+AFTER UPDATE OF peso_neto, referencia_codigo, material_id ON inv_registros
+FOR EACH ROW EXECUTE FUNCTION fn_recalcular_comparacion();
