@@ -1094,6 +1094,13 @@ BEGIN
 
       UPDATE inv_comparaciones SET estado = 'anulada', actualizado_at = NOW() WHERE id = NEW.comparacion_id;
       UPDATE inv_registros SET emparejado = FALSE, comparacion_id = NULL WHERE id = NEW.id;
+      -- Bug real (2026-10-05): aquí faltaba soltar también al OTRO lado de
+      -- la pareja — se quedaba con emparejado=true apuntando a una
+      -- comparación ya anulada, un "zombie" que ningún futuro candidato
+      -- podía superar (su diferencia registrada ya no era real).
+      IF v_pareja_id IS NOT NULL THEN
+        UPDATE inv_registros SET emparejado = FALSE, comparacion_id = NULL WHERE id = v_pareja_id;
+      END IF;
 
       PERFORM fn_intentar_emparejar(NEW.id);
       IF v_pareja_id IS NOT NULL THEN
