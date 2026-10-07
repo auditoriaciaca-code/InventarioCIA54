@@ -1,22 +1,50 @@
 import { useMemo, useState } from 'react'
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native'
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native'
 import { CATEGORIAS, CATEGORIA_MAP } from '../constants/materiales'
 import { ReferenciaFlat } from '../types'
 import { COLORS, SIZES } from '../constants/theme'
 import { formatDescripcion } from '../utils/format'
+import { crearMaterialOtroLocal } from '../services/sync'
 
 interface Props {
   recientes: ReferenciaFlat[]
   activo: ReferenciaFlat | null
   onSelect: (ref: ReferenciaFlat) => void
+  creadoPor: string
 }
 
 const MAX_RESULTADOS_BUSQUEDA = 40
 
-export default function MaterialPickerPanel({ recientes, activo, onSelect }: Props) {
+export default function MaterialPickerPanel({ recientes, activo, onSelect, creadoPor }: Props) {
   const [categoriaId, setCategoriaId] = useState('')
   const [busqueda, setBusqueda] = useState('')
+  const [creandoNuevo, setCreandoNuevo] = useState(false)
+  const [nombreNuevo, setNombreNuevo] = useState('')
+  const [creando, setCreando] = useState(false)
   const categoria = CATEGORIA_MAP.get(categoriaId)
+
+  async function handleCrearNuevo() {
+    const nombre = nombreNuevo.trim()
+    if (!nombre || creando || !categoria) return
+    setCreando(true)
+    try {
+      const ref = await crearMaterialOtroLocal(nombre, creadoPor)
+      setNombreNuevo('')
+      setCreandoNuevo(false)
+      onSelect({
+        categoriaId: categoria.id,
+        categoriaNombre: categoria.nombre,
+        icono: categoria.icono,
+        color: categoria.color,
+        codigo: ref.codigo,
+        descripcion: ref.descripcion,
+      })
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'No se pudo crear el material')
+    } finally {
+      setCreando(false)
+    }
+  }
 
   const resultadosBusqueda = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
@@ -134,6 +162,11 @@ export default function MaterialPickerPanel({ recientes, activo, onSelect }: Pro
           {categoria && (
             <View style={styles.seccion}>
               <Text style={styles.seccionTitulo}>{categoria.icono} {categoria.nombre}</Text>
+              {categoria.id === 'otros' && categoria.referencias.length === 0 && !creandoNuevo && (
+                <Text style={styles.sinResultados}>
+                  Todavía no hay nada aquí — crea el primero con el botón de abajo.
+                </Text>
+              )}
               <View style={styles.refGrid}>
                 {categoria.referencias.map(ref => {
                   const esActivo = activo?.codigo === ref.codigo
@@ -151,12 +184,40 @@ export default function MaterialPickerPanel({ recientes, activo, onSelect }: Pro
                       })}
                       activeOpacity={0.7}
                     >
-                      <Text style={[styles.refCodigo, esActivo && styles.refCodigoActivo]}>{ref.codigo}</Text>
+                      {categoria.id !== 'otros' && (
+                        <Text style={[styles.refCodigo, esActivo && styles.refCodigoActivo]}>{ref.codigo}</Text>
+                      )}
                       <Text style={styles.refDesc} numberOfLines={2}>{formatDescripcion(ref.descripcion)}</Text>
                     </TouchableOpacity>
                   )
                 })}
               </View>
+
+              {categoria.id === 'otros' && (
+                creandoNuevo ? (
+                  <View style={styles.crearNuevoRow}>
+                    <TextInput
+                      style={styles.crearNuevoInput}
+                      placeholder="Nombre del material (ej. Bastidores)..."
+                      placeholderTextColor={COLORS.textLight}
+                      value={nombreNuevo}
+                      onChangeText={setNombreNuevo}
+                      autoFocus
+                    />
+                    <TouchableOpacity
+                      style={[styles.crearNuevoBtn, (!nombreNuevo.trim() || creando) && styles.crearNuevoBtnDisabled]}
+                      onPress={handleCrearNuevo}
+                      disabled={!nombreNuevo.trim() || creando}
+                    >
+                      <Text style={styles.crearNuevoBtnText}>{creando ? '...' : 'Crear'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity style={styles.crearNuevoToggle} onPress={() => setCreandoNuevo(true)} activeOpacity={0.7}>
+                    <Text style={styles.crearNuevoToggleText}>➕ Crear material nuevo</Text>
+                  </TouchableOpacity>
+                )
+              )}
             </View>
           )}
         </>
@@ -347,5 +408,49 @@ const styles = StyleSheet.create({
   refDesc: {
     fontSize: 12,
     color: COLORS.text,
+  },
+  crearNuevoToggle: {
+    marginTop: 10,
+    paddingVertical: 12,
+    borderRadius: SIZES.radius,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+  },
+  crearNuevoToggleText: {
+    fontWeight: '700',
+    fontSize: 14,
+    color: COLORS.primary,
+  },
+  crearNuevoRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  crearNuevoInput: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    borderRadius: SIZES.radiusSm,
+    padding: 10,
+    fontSize: 14,
+    backgroundColor: COLORS.card,
+    color: COLORS.text,
+  },
+  crearNuevoBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 16,
+    borderRadius: SIZES.radiusSm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  crearNuevoBtnDisabled: {
+    opacity: 0.5,
+  },
+  crearNuevoBtnText: {
+    color: 'white',
+    fontWeight: '700',
+    fontSize: 13,
   },
 })

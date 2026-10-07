@@ -9,9 +9,13 @@ import {
   subirFotoStorage,
   obtenerAreas,
   obtenerCierresHoy,
+  obtenerMaterialesOtros,
+  crearMaterialOtroRemoto,
 } from './supabase'
 import { hoyLocalISO } from '../utils/fechas'
 import { actualizarAreas } from '../constants/areas'
+import { actualizarReferenciasOtros, agregarReferenciaOtroLocal } from '../constants/materiales'
+import { Referencia } from '../types'
 
 /**
  * Dispara la subida de un registro en segundo plano (no bloquea el flujo de
@@ -268,4 +272,106 @@ export async function sincronizar(): Promise<{ ok: boolean; mensaje: string }> {
   } catch (error: any) {
     return { ok: false, mensaje: error?.message || 'Error de sincronización' }
   }
+}
+
+/**
+ * Código único para un material "OTROS" creado en campo — generado en el
+ * celular, sin pedirle nada a Supabase, para que crear uno funcione sin
+ * señal. A propósito NO es un consecutivo bonito (1, 2, 3...): un
+ * consecutivo requeriría coordinarse con el servidor para no chocar entre
+ * 2 celulares creando al mismo tiempo sin señal, y reordenarlo después
+ * (cuando ambos sincronizan) podría hacer que una pesada ya guardada quede
+ * apuntando al material equivocado — el mismo tipo de bug que tardamos un
+ * día entero en arreglar en el doble conteo. Este código nunca cambia una
+ * vez creado. El operador nunca lo escribe ni lo ve — solo elige por
+ * nombre (ver MaterialPickerPanel/ReferenciaSelector).
+ */
+function generarCodigoOtro(): string {
+  const t = Date.now().toString(36).toUpperCase()
+  const r = Math.random().toString(36).slice(2, 6).toUpperCase()
+  return `OTR${t}${r}`
+}
+
+/**
+ * Carga a memoria lo que ya estaba guardado en SQLite de "OTROS" — se llama
+ * al arrancar la app, antes de que termine la sincronización por red, para
+ * que el selector de material no empiece vacío si ya se habían creado
+ * materiales en una sesión anterior (incluso sin señal).
+ */
+export async function cargarMaterialesOtrosLocal(): Promise<void> {
+  try {
+    const db = getDatabase()
+    const rows = await db.getAllAsync<any>(
+      'SELECT codigo, nombre FROM inv_materiales_otros ORDER BY created_at DESC'
+    )
+    actualizarReferenciasOtros(rows.map(r => ({ codigo: r.codigo, descripcion: r.nombre })))
+  } catch {}
+}
+
+/**
+ * Refresca la copia local del catálogo "OTROS" con lo que haya en Supabase
+ * (creado desde cualquier celular) y actualiza la memoria. Se llama cada
+ * 20s desde HeaderSesionButton (vive en todas las pestañas) para que un
+ * material creado en OTRO celular aparezca aquí sin reiniciar la app.
+ */
+export async function sincronizarMaterialesOtros(): Promise<void> {
+  const remotos = await obtenerMaterialesOtros()
+  if (remotos === null) return
+  try {
+    const db = getDatabase()
+    for (const m of remotos) {
+      await db.runAsync(
+        `INSERT INTO inv_materiales_otros (codigo, nombre, created_at, synced) VALUES (?, ?, ?, 1)
+         ON CONFLICT(codigo) DO UPDATE SET nombre = excluded.nombre, synced = 1`,
+        [m.codigo, m.nombre, m.created_at]
+      )
+    }
+    const rows = await db.getAllAsync<any>(
+      'SELECT codigo, nombre FROM inv_materiales_otros ORDER BY created_at DESC'
+    )
+    actualizarReferenciasOtros(rows.map(r => ({ codigo: r.codigo, descripcion: r.nombre })))
+  } catch {}
+}
+
+/**
+ * Crea un material nuevo en "OTROS" (botón "➕ Crear material nuevo"):
+ * genera el código, lo guarda local de inmediato (disponible al instante
+ * para seguir pesando, con o sin señal) e intenta subirlo en segundo
+ * plano. Si falla la subida, queda synced=0 para que
+ * reintentarMaterialesOtrosPendientes() lo reintente después — sin eso,
+ * el compañero nunca lo vería si el que lo creó se quedó sin señal justo
+ * después de crearlo.
+ */
+export async function crearMaterialOtroLocal(nombre: string, creadoPor: string): Promise<Referencia> {
+  const codigo = generarCodigoOtro()
+  const nombreLimpio = nombre.trim()
+  const ahora = new Date().toISOString()
+  const db = getDatabase()
+  await db.runAsync(
+    'INSERT INTO inv_materiales_otros (codigo, nombre, created_by, created_at, synced) VALUES (?, ?, ?, ?, 0)',
+    [codigo, nombreLimpio, creadoPor, ahora]
+  )
+  agregarReferenciaOtroLocal({ codigo, descripcion: nombreLimpio })
+
+  crearMaterialOtroRemoto({ codigo, nombre: nombreLimpio, created_by: creadoPor }).then(async ok => {
+    if (ok) {
+      try {
+        await db.runAsync('UPDATE inv_materiales_otros SET synced = 1 WHERE codigo = ?', [codigo])
+      } catch {}
+    }
+  })
+
+  return { codigo, descripcion: nombreLimpio }
+}
+
+/** Reintenta subir los materiales "OTROS" que se crearon sin señal. */
+export async function reintentarMaterialesOtrosPendientes(): Promise<void> {
+  try {
+    const db = getDatabase()
+    const pendientes = await db.getAllAsync<any>('SELECT * FROM inv_materiales_otros WHERE synced = 0')
+    for (const m of pendientes) {
+      const ok = await crearMaterialOtroRemoto({ codigo: m.codigo, nombre: m.nombre, created_by: m.created_by })
+      if (ok) await db.runAsync('UPDATE inv_materiales_otros SET synced = 1 WHERE codigo = ?', [m.codigo])
+    }
+  } catch {}
 }

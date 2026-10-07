@@ -1,17 +1,40 @@
 import { useState } from 'react'
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native'
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native'
 import { Referencia } from '../types'
 import { COLORS, SIZES } from '../constants/theme'
 import { formatDescripcion } from '../utils/format'
+import { crearMaterialOtroLocal } from '../services/sync'
 
 interface Props {
   referencias: Referencia[]
   seleccionada: Referencia | null
   onSelect: (ref: Referencia) => void
+  categoriaId?: string
+  creadoPor?: string
 }
 
-export default function ReferenciaSelector({ referencias, seleccionada, onSelect }: Props) {
+export default function ReferenciaSelector({ referencias, seleccionada, onSelect, categoriaId, creadoPor }: Props) {
   const [busqueda, setBusqueda] = useState('')
+  const [creandoNuevo, setCreandoNuevo] = useState(false)
+  const [nombreNuevo, setNombreNuevo] = useState('')
+  const [creando, setCreando] = useState(false)
+  const esOtros = categoriaId === 'otros'
+
+  async function handleCrearNuevo() {
+    const nombre = nombreNuevo.trim()
+    if (!nombre || creando) return
+    setCreando(true)
+    try {
+      const ref = await crearMaterialOtroLocal(nombre, creadoPor || '')
+      setNombreNuevo('')
+      setCreandoNuevo(false)
+      onSelect(ref)
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'No se pudo crear el material')
+    } finally {
+      setCreando(false)
+    }
+  }
 
   const filtradas = busqueda
     ? referencias.filter(
@@ -41,7 +64,7 @@ export default function ReferenciaSelector({ referencias, seleccionada, onSelect
       {seleccionada && seleccionada.codigo ? (
         <View style={styles.selectedBadge}>
           <Text style={styles.selectedText}>
-            {seleccionada.codigo} - {formatDescripcion(seleccionada.descripcion)}
+            {esOtros ? formatDescripcion(seleccionada.descripcion) : `${seleccionada.codigo} - ${formatDescripcion(seleccionada.descripcion)}`}
           </Text>
           <TouchableOpacity onPress={() => onSelect({ codigo: '', descripcion: '' })}>
             <Text style={styles.clearText}>✕</Text>
@@ -53,7 +76,7 @@ export default function ReferenciaSelector({ referencias, seleccionada, onSelect
         <View style={styles.listContent}>
           {filtradas.length === 0 ? (
             <Text style={styles.emptyText}>
-              {busqueda ? 'Sin resultados' : 'Selecciona una categoría primero'}
+              {busqueda ? 'Sin resultados' : esOtros ? 'Todavía no hay nada aquí — crea el primero abajo' : 'Selecciona una categoría primero'}
             </Text>
           ) : (
             filtradas.map(item => {
@@ -66,7 +89,7 @@ export default function ReferenciaSelector({ referencias, seleccionada, onSelect
                   activeOpacity={0.7}
                 >
                   <View style={styles.itemLeft}>
-                    <Text style={styles.codigo}>{item.codigo}</Text>
+                    {!esOtros && <Text style={styles.codigo}>{item.codigo}</Text>}
                     <Text style={styles.descripcion} numberOfLines={2}>
                       {formatDescripcion(item.descripcion)}
                     </Text>
@@ -78,6 +101,32 @@ export default function ReferenciaSelector({ referencias, seleccionada, onSelect
           )}
         </View>
       </ScrollView>
+
+      {esOtros && (
+        creandoNuevo ? (
+          <View style={styles.crearNuevoRow}>
+            <TextInput
+              style={styles.crearNuevoInput}
+              placeholder="Nombre del material (ej. Bastidores)..."
+              placeholderTextColor={COLORS.textLight}
+              value={nombreNuevo}
+              onChangeText={setNombreNuevo}
+              autoFocus
+            />
+            <TouchableOpacity
+              style={[styles.crearNuevoBtn, (!nombreNuevo.trim() || creando) && styles.crearNuevoBtnDisabled]}
+              onPress={handleCrearNuevo}
+              disabled={!nombreNuevo.trim() || creando}
+            >
+              <Text style={styles.crearNuevoBtnText}>{creando ? '...' : 'Crear'}</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity style={styles.crearNuevoToggle} onPress={() => setCreandoNuevo(true)} activeOpacity={0.7}>
+            <Text style={styles.crearNuevoToggleText}>➕ Crear material nuevo</Text>
+          </TouchableOpacity>
+        )
+      )}
     </View>
   )
 }
@@ -171,5 +220,49 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     paddingVertical: 30,
     fontSize: 14,
+  },
+  crearNuevoToggle: {
+    marginTop: 10,
+    paddingVertical: 12,
+    borderRadius: SIZES.radius,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+  },
+  crearNuevoToggleText: {
+    fontWeight: '700',
+    fontSize: 14,
+    color: COLORS.primary,
+  },
+  crearNuevoRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  crearNuevoInput: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    borderRadius: SIZES.radiusSm,
+    padding: 10,
+    fontSize: 14,
+    backgroundColor: COLORS.card,
+    color: COLORS.text,
+  },
+  crearNuevoBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 16,
+    borderRadius: SIZES.radiusSm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  crearNuevoBtnDisabled: {
+    opacity: 0.5,
+  },
+  crearNuevoBtnText: {
+    color: 'white',
+    fontWeight: '700',
+    fontSize: 13,
   },
 })

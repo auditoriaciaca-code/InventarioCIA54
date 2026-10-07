@@ -9,7 +9,7 @@ import InventarioScreen from './src/screens/InventarioScreen'
 import ResumenScreen from './src/screens/ResumenScreen'
 import ChatRegistroScreen from './src/screens/ChatRegistroScreen'
 import { initDatabase } from './src/services/database'
-import { cargarAreasLocal, sincronizarAreas } from './src/services/sync'
+import { cargarAreasLocal, sincronizarAreas, cargarMaterialesOtrosLocal, sincronizarMaterialesOtros } from './src/services/sync'
 import { COLORS } from './src/constants/theme'
 import { SesionProvider } from './src/context/SesionContext'
 import { ComparacionesProvider } from './src/context/ComparacionesContext'
@@ -27,8 +27,10 @@ export default function App() {
     initDatabase()
       .then(async () => {
         await cargarAreasLocal()
+        await cargarMaterialesOtrosLocal()
         setReady(true)
         sincronizarAreas()
+        sincronizarMaterialesOtros()
       })
       .catch((e: any) => setError(e?.message || 'Error al inicializar BD'))
   }, [])

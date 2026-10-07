@@ -282,6 +282,8 @@ export default function RegistroScreen() {
             referencias={categoriaActual.referencias}
             seleccionada={referencia}
             onSelect={setReferencia}
+            categoriaId={materialId}
+            creadoPor={sesion?.nombre_operador || ''}
           />
         ) : (
           <Text style={styles.hintText}>Seleccione una categoría primero</Text>

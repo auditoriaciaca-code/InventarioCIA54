@@ -79,6 +79,14 @@ export async function initDatabase(): Promise<void> {
       clave TEXT PRIMARY KEY,
       valor TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS inv_materiales_otros (
+      codigo TEXT PRIMARY KEY,
+      nombre TEXT NOT NULL,
+      created_by TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      synced INTEGER DEFAULT 0
+    );
   `)
 
   await seedMateriales()

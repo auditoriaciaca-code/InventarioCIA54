@@ -285,6 +285,8 @@ export default function InventarioScreen() {
                       referencias={CATEGORIA_MAP.get(editMaterialId)?.referencias || []}
                       seleccionada={editReferencia}
                       onSelect={setEditReferencia}
+                      categoriaId={editMaterialId}
+                      creadoPor={sesion?.nombre_operador || ''}
                     />
                   </View>
                 )}

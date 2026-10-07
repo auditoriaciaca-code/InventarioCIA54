@@ -272,6 +272,42 @@ export async function crearAreaRemota(area: {
 }
 
 /**
+ * Catálogo de materiales "OTROS" creados en campo (categoría comodín para
+ * lo que no existe en el catálogo fijo, ej. "Bastidores"). El código ya
+ * viene generado desde el celular (ver generarCodigoOtro en sync.ts) —
+ * único garantizado sin necesitar turno de Supabase, así crear uno nuevo
+ * funciona offline. null = sin señal; [] = ninguno creado todavía.
+ */
+export async function obtenerMaterialesOtros(): Promise<
+  Array<{ codigo: string; nombre: string; created_at: string }> | null
+> {
+  try {
+    const { data, error } = await supabase
+      .from('inv_materiales_otros')
+      .select('codigo, nombre, created_at')
+      .order('created_at', { ascending: false })
+    if (error) return null
+    return data ?? []
+  } catch {
+    return null
+  }
+}
+
+/** Sube un material "OTROS" creado en el celular (best-effort). */
+export async function crearMaterialOtroRemoto(item: {
+  codigo: string
+  nombre: string
+  created_by: string
+}): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('inv_materiales_otros').upsert([item], { onConflict: 'codigo' })
+    return !error
+  } catch {
+    return false
+  }
+}
+
+/**
  * Cierres de HOY para todas las áreas de un jalón (el lobby los necesita
  * todos a la vez). Devuelve un mapa area_id -> fila de cierre.
  */

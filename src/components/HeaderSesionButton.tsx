@@ -3,7 +3,12 @@ import { TouchableOpacity, Text, StyleSheet } from 'react-native'
 import { useSesion } from '../context/SesionContext'
 import { nombreArea } from '../constants/areas'
 import { obtenerOperadoresHoyPorArea } from '../services/supabase'
-import { reintentarSesionesPendientes, reintentarLiberacionesPendientes } from '../services/sync'
+import {
+  reintentarSesionesPendientes,
+  reintentarLiberacionesPendientes,
+  sincronizarMaterialesOtros,
+  reintentarMaterialesOtrosPendientes,
+} from '../services/sync'
 
 const REFRESH_MS = 20000
 
@@ -24,6 +29,8 @@ export default function HeaderSesionButton() {
       // mientras el lobby está abierto.
       await reintentarSesionesPendientes()
       await reintentarLiberacionesPendientes()
+      await reintentarMaterialesOtrosPendientes()
+      sincronizarMaterialesOtros()
       const mapa = await obtenerOperadoresHoyPorArea()
       const otros = (mapa[sesion!.area_id!] || []).filter(
         n => n.toLowerCase() !== sesion!.nombre_operador.toLowerCase()

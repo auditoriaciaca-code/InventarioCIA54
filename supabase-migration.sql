@@ -1135,3 +1135,37 @@ DROP TRIGGER IF EXISTS trg_recalcular_comparacion ON inv_registros;
 CREATE TRIGGER trg_recalcular_comparacion
 AFTER UPDATE OF peso_neto, referencia_codigo, material_id ON inv_registros
 FOR EACH ROW EXECUTE FUNCTION fn_recalcular_comparacion();
+
+-- =====================================================================
+-- MATERIALES "OTROS" CREADOS EN CAMPO  (2026-10-07)
+-- Antes, el catálogo completo de materiales/referencias vivía escrito en
+-- el código de la app (src/constants/materiales.ts) — agregar uno nuevo
+-- requería una actualización. Para los casos reales de campo (ej.
+-- "Bastidores", "Revuelto de cobre hierro") que no están en el catálogo
+-- fijo, se agrega la categoría "otros" (📦) cuyo contenido SÍ es dinámico:
+-- cualquier operador puede crear uno nuevo desde el celular y queda
+-- disponible al instante para el compañero (y para siempre, en cualquier
+-- área) — ver botón "➕ Crear material nuevo" en MaterialPickerPanel /
+-- ReferenciaSelector.
+--
+-- El código (ej. "OTRM5K2J1XQ") se genera en el propio celular, no aquí
+-- — a propósito no es un consecutivo (1, 2, 3...) porque eso requeriría
+-- coordinarse con el servidor para no chocar entre 2 celulares creando
+-- sin señal al mismo tiempo, y reordenarlo después del sync podría dejar
+-- una pesada ya guardada apuntando al material equivocado. Este código
+-- nunca cambia una vez creado, así que funciona offline sin riesgo. El
+-- operador nunca lo ve, solo el nombre.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS inv_materiales_otros (
+  codigo     TEXT PRIMARY KEY,
+  nombre     TEXT NOT NULL,
+  created_by TEXT DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE inv_materiales_otros DISABLE ROW LEVEL SECURITY;
+ALTER TABLE inv_materiales_otros REPLICA IDENTITY FULL;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE inv_materiales_otros;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

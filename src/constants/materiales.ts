@@ -1,6 +1,12 @@
-import { Categoria } from '../types'
+import { Categoria, Referencia } from '../types'
 
-export const CATEGORIAS: Categoria[] = [
+// CATEGORIAS es un binding mutable a propósito (mismo patrón que AREAS en
+// constants/areas.ts): la categoría "otros" se llena en caliente con lo
+// que la gente va creando en campo (ver actualizarReferenciasOtros/
+// agregarReferenciaOtroLocal, llamadas desde sync.ts), sin necesitar una
+// actualización de la app — ver sección "Materiales creados en campo
+// (OTROS)" en AGENTS.md.
+export let CATEGORIAS: Categoria[] = [
   {
     id: 'aceros',
     nombre: 'Aceros',
@@ -272,16 +278,59 @@ export const CATEGORIAS: Categoria[] = [
       { codigo: '11025', descripcion: 'CHATARRA DE ALUMINIO GALILLO' },
     ],
   },
+  {
+    id: 'otros',
+    nombre: 'Otros',
+    icono: '📦',
+    color: '#95a5a6',
+    referencias: [], // se llena con actualizarReferenciasOtros() al sincronizar
+  },
 ]
 
-export const CATEGORIA_MAP = new Map(CATEGORIAS.map(c => [c.id, c]))
-
-export const MATERIALES = CATEGORIAS.map(c => ({
+export let CATEGORIA_MAP = new Map(CATEGORIAS.map(c => [c.id, c]))
+export let MATERIALES = CATEGORIAS.map(c => ({
   id: c.id,
   nombre: c.nombre,
   codigo: c.id.toUpperCase(),
   icono: c.icono,
   color: c.color,
 }))
+export let MATERIAL_MAP = new Map(MATERIALES.map(m => [m.id, m]))
 
-export const MATERIAL_MAP = new Map(MATERIALES.map(m => [m.id, m]))
+function recalcularDerivados(): void {
+  CATEGORIA_MAP = new Map(CATEGORIAS.map(c => [c.id, c]))
+  MATERIALES = CATEGORIAS.map(c => ({
+    id: c.id,
+    nombre: c.nombre,
+    codigo: c.id.toUpperCase(),
+    icono: c.icono,
+    color: c.color,
+  }))
+  MATERIAL_MAP = new Map(MATERIALES.map(m => [m.id, m]))
+}
+
+/**
+ * Reemplaza en memoria la lista completa de referencias "OTROS" (fuente de
+ * verdad: Supabase/SQLite local) — se llama desde sincronizarMaterialesOtros
+ * y cargarMaterialesOtrosLocal en sync.ts. Más recientes primero.
+ */
+export function actualizarReferenciasOtros(referencias: Referencia[]): void {
+  const otros = CATEGORIAS.find(c => c.id === 'otros')
+  if (!otros) return
+  otros.referencias = referencias
+  recalcularDerivados()
+}
+
+/**
+ * Agrega UNA referencia nueva a "OTROS" de inmediato (sin esperar la
+ * próxima sincronización) — para que quien la acaba de crear la vea y
+ * pueda seleccionarla al instante, incluso sin señal. Si el código ya
+ * existe (ej. llegó por sync justo después de crearla local), no duplica.
+ */
+export function agregarReferenciaOtroLocal(ref: Referencia): void {
+  const otros = CATEGORIAS.find(c => c.id === 'otros')
+  if (!otros) return
+  if (otros.referencias.some(r => r.codigo === ref.codigo)) return
+  otros.referencias = [ref, ...otros.referencias]
+  recalcularDerivados()
+}

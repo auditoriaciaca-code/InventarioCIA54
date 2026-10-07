@@ -166,6 +166,14 @@ Toda subida "best-effort, un solo intento, sin bloquear la UI" (`subirSesionInme
 
 Esto cerró varios bugs reales de un test de campo: una sesión que nunca aparecía en el lobby de otro celular, y **ediciones de una pesada que no se reflejaban en la plataforma web** (`handleSaveEdit` en `ChatRegistroScreen`/`InventarioScreen` ahora llama a `subirEnSegundoPlano` después del `UPDATE` local — antes solo el registro nuevo se subía solo, no sus ediciones posteriores).
 
+### 7.2 Materiales creados en campo (OTROS)
+El catálogo de materiales/referencias (184 referencias en 11 categorías) vive escrito en `src/constants/materiales.ts` — agregar uno nuevo normalmente requiere una actualización de la app. Para lo que de verdad no existe ahí (ej. "Bastidores", "Revuelto de cobre hierro"), hay una categoría fija **"Otros"** (📦) cuyo contenido es dinámico:
+- Cualquier operador puede crear un material nuevo desde el celular (botón "➕ Crear material nuevo" al final de la categoría "Otros", tanto en `MaterialPickerPanel` de Rápido como en `ReferenciaSelector` de Registro/Inventario) — queda **permanente**, disponible en cualquier área desde ese momento, no solo para esa sesión
+- El código (ej. `OTRM5K2J1XQ`) se genera **en el propio celular** (`generarCodigoOtro` en `sync.ts`), no en Supabase — a propósito NO es un consecutivo bonito (1, 2, 3...): eso requeriría coordinarse con el servidor para no chocar si 2 celulares crean sin señal al mismo tiempo, y reordenarlo después del sync podría dejar una pesada ya guardada apuntando al material equivocado (mismo tipo de bug que los de la sección 7). Este código nunca cambia una vez creado, así que **crear uno nuevo funciona offline sin riesgo** — el operador nunca lo ve, solo el nombre (el código se oculta a propósito en la UI para "otros", a diferencia de las demás categorías que sí muestran su código)
+- `CATEGORIAS`/`CATEGORIA_MAP`/`MATERIALES`/`MATERIAL_MAP` en `constants/materiales.ts` son bindings mutables (mismo patrón que `AREAS` en `constants/areas.ts`): `actualizarReferenciasOtros()` reemplaza toda la lista de "Otros" al sincronizar, `agregarReferenciaOtroLocal()` inserta uno solo al instante (para que quien lo crea lo vea ya, incluso sin señal)
+- Sincroniza por **polling cada 20s** (`sincronizarMaterialesOtros()` + `reintentarMaterialesOtrosPendientes()` desde `HeaderSesionButton`, igual que áreas/lotes/cierres) en vez de Realtime — un material creado en otro celular tarda hasta 20s en aparecer, no es instantáneo como el semáforo del doble conteo
+- Tabla `inv_materiales_otros` en Supabase (ver `supabase-migration.sql`), espejo local en SQLite con columna `synced` para el mismo patrón de reintento de la sección 7.1
+
 ---
 
 ## Pantallas (Navegación)
@@ -311,7 +319,7 @@ Builds recientes:
 
 - **URL**: `https://lkrjzpxzxurzjoswpeku.supabase.co`
 - **Anon Key**: `sb_publishable_6cWubKMz8T6lJqVE6HadnA_MX47WHQz`
-- **Tablas**: `inv_registros`, `inv_fotos`, `inv_sesiones` (espejo de SQLite local, las 3 sincronizan best-effort), `inv_areas`, `inv_comparaciones` (doble conteo), `inv_lotes` (checklist de lotes por área, alimenta y alimentada por `/web`), `inv_cierres` (cierre de inventario por área+día) e `inv_config` (config global, ej. hash de la clave de supervisor) — estas últimas 4 solo existen en Supabase, no en SQLite local
+- **Tablas**: `inv_registros`, `inv_fotos`, `inv_sesiones` (espejo de SQLite local, las 3 sincronizan best-effort), `inv_areas` (también con cache local, `inv_areas_cache`), `inv_materiales_otros` (materiales creados en campo, categoría "Otros" — también con espejo local del mismo nombre, ver sección 7.2), `inv_comparaciones` (doble conteo), `inv_lotes` (checklist de lotes por área, alimenta y alimentada por `/web`), `inv_cierres` (cierre de inventario por área+día) e `inv_config` (config global, ej. hash de la clave de supervisor) — estas últimas 3 (comparaciones, lotes, cierres) + config solo existen en Supabase, no en SQLite local
 - **Storage**: bucket `inv_fotos` es **público** (desde 2026-09) con políticas `anon` de insert/select/update, para que una foto tomada en un celular se vea en cualquier otro y en `/web` — antes solo se sincronizaba el metadato, nunca el archivo
 - **Sincronización**: subida inmediata best-effort al guardar + manual (botón) o automática (configurable en Resumen) como respaldo; ver sección 7.1 para el patrón de reintento de las subidas best-effort
 - **Realtime**: habilitado sobre `inv_comparaciones`, `inv_registros`, `inv_lotes`, `inv_areas` y `inv_cierres` — alimenta tanto las alertas de doble conteo en la app móvil como las vistas en vivo de `/web`

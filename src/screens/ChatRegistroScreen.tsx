@@ -621,7 +621,7 @@ export default function ChatRegistroScreen() {
       <Animated.View style={[styles.pagerRow, { transform: [{ translateX: swipeX }] }]}>
       <View style={styles.pagerPane}>
         {panelMontado && (
-          <MaterialPickerPanel recientes={chips} activo={activeReferencia} onSelect={handleSeleccionarMaterial} />
+          <MaterialPickerPanel recientes={chips} activo={activeReferencia} onSelect={handleSeleccionarMaterial} creadoPor={sesion?.nombre_operador || ''} />
         )}
       </View>
       <View style={[styles.wrapper, styles.pagerPane]}>
@@ -849,6 +849,8 @@ export default function ChatRegistroScreen() {
                       referencias={CATEGORIA_MAP.get(editMaterialId)?.referencias || []}
                       seleccionada={editReferencia}
                       onSelect={setEditReferencia}
+                      categoriaId={editMaterialId}
+                      creadoPor={sesion?.nombre_operador || ''}
                     />
                   </View>
                 )}
@@ -918,6 +920,8 @@ export default function ChatRegistroScreen() {
                       referencias={CATEGORIA_MAP.get(corrMaterialId)?.referencias || []}
                       seleccionada={corrReferencia}
                       onSelect={setCorrReferencia}
+                      categoriaId={corrMaterialId}
+                      creadoPor={sesion?.nombre_operador || ''}
                     />
                   </View>
                 )}
