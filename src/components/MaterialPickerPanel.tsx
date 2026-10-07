@@ -144,82 +144,82 @@ export default function MaterialPickerPanel({ recientes, activo, onSelect, cread
               {CATEGORIAS.map(c => {
                 const activa = c.id === categoriaId
                 return (
-                  <TouchableOpacity
-                    key={c.id}
-                    style={[styles.categoriaRow, activa && styles.categoriaRowActiva]}
-                    onPress={() => setCategoriaId(activa ? '' : c.id)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.categoriaRowIcono}>{c.icono}</Text>
-                    <Text style={[styles.categoriaRowNombre, activa && styles.categoriaRowNombreActiva]}>{c.nombre}</Text>
-                    <Text style={styles.categoriaRowFlecha}>{activa ? '▾' : '▸'}</Text>
-                  </TouchableOpacity>
+                  <View key={c.id}>
+                    <TouchableOpacity
+                      style={[styles.categoriaRow, activa && styles.categoriaRowActiva]}
+                      onPress={() => setCategoriaId(activa ? '' : c.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.categoriaRowIcono}>{c.icono}</Text>
+                      <Text style={[styles.categoriaRowNombre, activa && styles.categoriaRowNombreActiva]}>{c.nombre}</Text>
+                      <Text style={styles.categoriaRowFlecha}>{activa ? '▾' : '▸'}</Text>
+                    </TouchableOpacity>
+
+                    {activa && (
+                      <View style={styles.categoriaExpandida}>
+                        {c.id === 'otros' && c.referencias.length === 0 && !creandoNuevo && (
+                          <Text style={styles.sinResultados}>
+                            Todavía no hay nada aquí — crea el primero con el botón de abajo.
+                          </Text>
+                        )}
+                        <View style={styles.refGrid}>
+                          {c.referencias.map(ref => {
+                            const esActivo = activo?.codigo === ref.codigo
+                            return (
+                              <TouchableOpacity
+                                key={ref.codigo}
+                                style={[styles.refCard, esActivo && styles.refCardActivo]}
+                                onPress={() => onSelect({
+                                  categoriaId: c.id,
+                                  categoriaNombre: c.nombre,
+                                  icono: c.icono,
+                                  color: c.color,
+                                  codigo: ref.codigo,
+                                  descripcion: ref.descripcion,
+                                })}
+                                activeOpacity={0.7}
+                              >
+                                {c.id !== 'otros' && (
+                                  <Text style={[styles.refCodigo, esActivo && styles.refCodigoActivo]}>{ref.codigo}</Text>
+                                )}
+                                <Text style={styles.refDesc} numberOfLines={2}>{formatDescripcion(ref.descripcion)}</Text>
+                              </TouchableOpacity>
+                            )
+                          })}
+                        </View>
+
+                        {c.id === 'otros' && (
+                          creandoNuevo ? (
+                            <View style={styles.crearNuevoRow}>
+                              <TextInput
+                                style={styles.crearNuevoInput}
+                                placeholder="Nombre del material (ej. Bastidores)..."
+                                placeholderTextColor={COLORS.textLight}
+                                value={nombreNuevo}
+                                onChangeText={setNombreNuevo}
+                                autoFocus
+                              />
+                              <TouchableOpacity
+                                style={[styles.crearNuevoBtn, (!nombreNuevo.trim() || creando) && styles.crearNuevoBtnDisabled]}
+                                onPress={handleCrearNuevo}
+                                disabled={!nombreNuevo.trim() || creando}
+                              >
+                                <Text style={styles.crearNuevoBtnText}>{creando ? '...' : 'Crear'}</Text>
+                              </TouchableOpacity>
+                            </View>
+                          ) : (
+                            <TouchableOpacity style={styles.crearNuevoToggle} onPress={() => setCreandoNuevo(true)} activeOpacity={0.7}>
+                              <Text style={styles.crearNuevoToggleText}>➕ Crear material nuevo</Text>
+                            </TouchableOpacity>
+                          )
+                        )}
+                      </View>
+                    )}
+                  </View>
                 )
               })}
             </View>
           </View>
-
-          {categoria && (
-            <View style={styles.seccion}>
-              <Text style={styles.seccionTitulo}>{categoria.icono} {categoria.nombre}</Text>
-              {categoria.id === 'otros' && categoria.referencias.length === 0 && !creandoNuevo && (
-                <Text style={styles.sinResultados}>
-                  Todavía no hay nada aquí — crea el primero con el botón de abajo.
-                </Text>
-              )}
-              <View style={styles.refGrid}>
-                {categoria.referencias.map(ref => {
-                  const esActivo = activo?.codigo === ref.codigo
-                  return (
-                    <TouchableOpacity
-                      key={ref.codigo}
-                      style={[styles.refCard, esActivo && styles.refCardActivo]}
-                      onPress={() => onSelect({
-                        categoriaId: categoria.id,
-                        categoriaNombre: categoria.nombre,
-                        icono: categoria.icono,
-                        color: categoria.color,
-                        codigo: ref.codigo,
-                        descripcion: ref.descripcion,
-                      })}
-                      activeOpacity={0.7}
-                    >
-                      {categoria.id !== 'otros' && (
-                        <Text style={[styles.refCodigo, esActivo && styles.refCodigoActivo]}>{ref.codigo}</Text>
-                      )}
-                      <Text style={styles.refDesc} numberOfLines={2}>{formatDescripcion(ref.descripcion)}</Text>
-                    </TouchableOpacity>
-                  )
-                })}
-              </View>
-
-              {categoria.id === 'otros' && (
-                creandoNuevo ? (
-                  <View style={styles.crearNuevoRow}>
-                    <TextInput
-                      style={styles.crearNuevoInput}
-                      placeholder="Nombre del material (ej. Bastidores)..."
-                      placeholderTextColor={COLORS.textLight}
-                      value={nombreNuevo}
-                      onChangeText={setNombreNuevo}
-                      autoFocus
-                    />
-                    <TouchableOpacity
-                      style={[styles.crearNuevoBtn, (!nombreNuevo.trim() || creando) && styles.crearNuevoBtnDisabled]}
-                      onPress={handleCrearNuevo}
-                      disabled={!nombreNuevo.trim() || creando}
-                    >
-                      <Text style={styles.crearNuevoBtnText}>{creando ? '...' : 'Crear'}</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity style={styles.crearNuevoToggle} onPress={() => setCreandoNuevo(true)} activeOpacity={0.7}>
-                    <Text style={styles.crearNuevoToggleText}>➕ Crear material nuevo</Text>
-                  </TouchableOpacity>
-                )
-              )}
-            </View>
-          )}
         </>
       )}
 
@@ -378,6 +378,12 @@ const styles = StyleSheet.create({
   categoriaRowFlecha: {
     fontSize: 13,
     color: COLORS.textLight,
+  },
+  categoriaExpandida: {
+    padding: 10,
+    backgroundColor: COLORS.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
   refGrid: {
     flexDirection: 'row',
