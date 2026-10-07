@@ -9,6 +9,8 @@ import { useSesion, SesionRemota } from '../context/SesionContext'
 import { AREAS, AREA_MAP, nombreArea } from '../constants/areas'
 import {
   obtenerOperadoresHoyPorArea,
+  obtenerSesionIdOcupante,
+  liberarSesionInmediato,
   obtenerCierresHoy,
   crearAreaRemota,
   reabrirInventarioRemoto,
@@ -43,6 +45,10 @@ export default function SesionSelector() {
   const [pinReabrir, setPinReabrir] = useState('')
   const [reabriendo, setReabriendo] = useState(false)
 
+  const [liberandoOperador, setLiberandoOperador] = useState<{ areaId: string; nombre: string } | null>(null)
+  const [pinLiberar, setPinLiberar] = useState('')
+  const [liberando, setLiberando] = useState(false)
+
   const [historialAreaId, setHistorialAreaId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -68,13 +74,6 @@ export default function SesionSelector() {
     )
   }
 
-  function handleBloqueado(nombreOperador: string) {
-    Alert.alert(
-      'Sala ocupada',
-      `${nombreOperador} sigue activo en otro celular. Debe tocar "Salir de mi sesión" desde ese teléfono antes de que puedas entrar aquí.`
-    )
-  }
-
   async function handleSalir() {
     if (!sesion) return
     Alert.alert(
@@ -87,10 +86,15 @@ export default function SesionSelector() {
           style: 'destructive',
           onPress: async () => {
             setSaliendo(true)
-            const ok = await salirSesion()
-            setSaliendo(false)
-            if (!ok) {
-              Alert.alert('Sin conexión', 'No se pudo salir. Revisa tu internet e intenta de nuevo.')
+            try {
+              const ok = await salirSesion()
+              if (!ok) {
+                Alert.alert('Sin conexión', 'No se pudo salir. Revisa tu internet e intenta de nuevo.')
+              }
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'No se pudo salir. Intenta de nuevo.')
+            } finally {
+              setSaliendo(false)
             }
           },
         },
@@ -106,6 +110,8 @@ export default function SesionSelector() {
     setAreaExpandidaId(areaId)
     setCreandoAreaAbierto(false)
     setPinReabrir('')
+    setLiberandoOperador(null)
+    setPinLiberar('')
     const sugerido = sesion?.nombre_operador || sesiones[0]?.nombre_operador || ''
     setNombreNuevo(sugerido)
   }
@@ -166,8 +172,16 @@ export default function SesionSelector() {
     if (procesando) return
     setProcesando(true)
     try {
+      // Solo se retoma la sesión local si es de HOY — si lo último que hay
+      // para este nombre+área es de otro día, se trata como sesión nueva
+      // (nunca se hereda sin querer el historial de un inventario que ya
+      // terminó hace días). Para agregarle a un día anterior a propósito
+      // está "Ver historial y continuar otra sesión".
       const local = sesiones.find(
-        s => s.area_id === areaId && s.nombre_operador.toLowerCase() === nombreOperador.toLowerCase()
+        s =>
+          s.area_id === areaId &&
+          s.nombre_operador.toLowerCase() === nombreOperador.toLowerCase() &&
+          String(s.fecha || s.created_at || '').slice(0, 10) === hoyLocalISO()
       )
       if (local) {
         await seleccionarSesion(local)
@@ -286,6 +300,69 @@ export default function SesionSelector() {
       await confirmarReapertura(areaId)
     } finally {
       setReabriendo(false)
+    }
+  }
+
+  /**
+   * Liberar el candado de alguien que quedó "ocupando" una sala sin tocar
+   * "Salir" (celular muerto, se les olvidó, etc.) — desde CUALQUIER
+   * celular, no solo el suyo, protegido con la misma clave de supervisor
+   * que "Reabrir". Antes esto solo se podía hacer entrando a Supabase a
+   * mano (ver AGENTS.md).
+   */
+  async function confirmarLiberacion(areaId: string, nombre: string) {
+    const sesionId = await obtenerSesionIdOcupante(areaId, nombre)
+    if (!sesionId) {
+      Alert.alert('No encontrado', `No se encontró una sesión activa de ${nombre} en esta área.`)
+      return
+    }
+    const ok = await liberarSesionInmediato(sesionId)
+    if (!ok) {
+      Alert.alert('Sin conexión', 'No se pudo liberar. Intenta de nuevo.')
+      return
+    }
+    setPinLiberar('')
+    setLiberandoOperador(null)
+    setOperadoresPorArea(await obtenerOperadoresHoyPorArea())
+    Alert.alert('Listo', `${nombre} fue liberado de esta sala.`)
+  }
+
+  async function handleLiberarOcupante(areaId: string, nombre: string) {
+    const pin = pinLiberar.trim()
+    if (!pin || liberando) return
+    setLiberando(true)
+    try {
+      const hashGuardado = await obtenerClaveSupervisorHash()
+      if (hashGuardado === null) {
+        Alert.alert('Sin conexión', 'No se pudo validar la clave. Intenta de nuevo.')
+        return
+      }
+      const hashIngresado = await sha256(pin)
+      if (hashGuardado === '') {
+        Alert.alert(
+          'Configurar clave de supervisor',
+          'Todavía no hay ninguna clave configurada. ¿Quieres usar la que acabas de escribir como la clave del supervisor de ahora en adelante?',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            {
+              text: 'Sí, usarla',
+              onPress: async () => {
+                const guardada = await guardarClaveSupervisorHash(hashIngresado)
+                if (guardada) await confirmarLiberacion(areaId, nombre)
+                else Alert.alert('Error', 'No se pudo guardar la clave. Intenta de nuevo.')
+              },
+            },
+          ]
+        )
+        return
+      }
+      if (hashIngresado !== hashGuardado) {
+        Alert.alert('Clave incorrecta', 'La clave no coincide.')
+        return
+      }
+      await confirmarLiberacion(areaId, nombre)
+    } finally {
+      setLiberando(false)
     }
   }
 
@@ -411,18 +488,44 @@ export default function SesionSelector() {
                     <View style={styles.roomExpand}>
                       {ocupantes.map(op => {
                         const mio = esMio(area.id, op)
+                        const liberandoEste = liberandoOperador?.areaId === area.id && liberandoOperador?.nombre === op
                         return (
-                          <TouchableOpacity
-                            key={op}
-                            style={[styles.whoRow, !mio && styles.whoRowLocked]}
-                            onPress={() => (mio ? handleContinuar(area.id, op) : handleBloqueado(op))}
-                            disabled={procesando}
-                          >
-                            <Text style={styles.whoName}>{mio ? '👤' : '🔒'} {op}</Text>
-                            <Text style={styles.whoHint}>
-                              {mio ? 'Continuar →' : 'en otro celular'}
-                            </Text>
-                          </TouchableOpacity>
+                          <View key={op}>
+                            <TouchableOpacity
+                              style={[styles.whoRow, !mio && styles.whoRowLocked]}
+                              onPress={() =>
+                                mio
+                                  ? handleContinuar(area.id, op)
+                                  : setLiberandoOperador(liberandoEste ? null : { areaId: area.id, nombre: op })
+                              }
+                              disabled={procesando}
+                            >
+                              <Text style={styles.whoName}>{mio ? '👤' : '🔒'} {op}</Text>
+                              <Text style={styles.whoHint}>
+                                {mio ? 'Continuar →' : liberandoEste ? 'Cancelar ✕' : 'en otro celular · liberar'}
+                              </Text>
+                            </TouchableOpacity>
+                            {liberandoEste && (
+                              <View style={styles.liberarRow}>
+                                <TextInput
+                                  style={styles.pinInput}
+                                  placeholder="Clave de supervisor"
+                                  placeholderTextColor={COLORS.textLight}
+                                  secureTextEntry
+                                  value={pinLiberar}
+                                  onChangeText={setPinLiberar}
+                                  autoFocus
+                                />
+                                <TouchableOpacity
+                                  style={styles.reopenBtn}
+                                  onPress={() => handleLiberarOcupante(area.id, op)}
+                                  disabled={!pinLiberar.trim() || liberando}
+                                >
+                                  <Text style={styles.reopenBtnText}>{liberando ? '...' : '🔓 Liberar'}</Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+                          </View>
                         )
                       })}
 
@@ -750,6 +853,12 @@ const styles = StyleSheet.create({
   pinRow: {
     flexDirection: 'row',
     gap: 8,
+  },
+  liberarRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: -4,
+    marginBottom: 6,
   },
   pinInput: {
     flex: 1,

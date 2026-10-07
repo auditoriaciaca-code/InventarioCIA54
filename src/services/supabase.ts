@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { File } from 'expo-file-system'
 import { Comparacion } from '../types'
+import { hoyLocalISO } from '../utils/fechas'
 
 const supabaseUrl = 'https://lkrjzpxzxurzjoswpeku.supabase.co'
 const supabaseAnonKey = 'sb_publishable_6cWubKMz8T6lJqVE6HadnA_MX47WHQz'
@@ -84,32 +85,38 @@ export async function subirSesionInmediato(sesion: any): Promise<boolean> {
 }
 
 /**
- * Operadores que siguen "ocupando" cada área ahora mismo (su sesión más
- * reciente en esa área todavía no fue liberada con el botón "Salir").
+ * Operadores que siguen "ocupando" cada área HOY (sesión de hoy, sin
+ * liberar con el botón "Salir" o el de "Liberar operador").
  *
- * Ojo: se filtra por liberada_at, NO por "creada hoy" — una sesión que
- * arrancó ayer y a la que nunca le tocaron "Salir" sigue ocupando la sala
- * hoy (el candado es a propósito indefinido, ver AGENTS.md). Filtrar por
- * fecha de creación dejaba invisibles a esos operadores en el lobby aunque
- * siguieran activos.
+ * Desde 2026-10-07 se filtra también por fecha: una sesión de un día
+ * anterior ya NO cuenta como "ocupando" la sala, aunque nadie haya tocado
+ * "Salir" — antes el candado era indefinido a propósito, pero en la
+ * práctica dejaba salas marcadas como ocupadas por inventarios que ya
+ * habían terminado hace días/semanas, confundiendo a quien entraba de
+ * nuevo (ver AGENTS.md). El cupo de operadores ahora se reinicia solo
+ * cada día; "Ver historial y continuar otra sesión" sigue sirviendo para
+ * el caso real de querer agregar a un día anterior a propósito.
  *
  * Si falla (sin señal), devuelve {} y el selector simplemente no bloquea
  * ni muestra nada — no debe romper el flujo offline-first.
  */
 export async function obtenerOperadoresHoyPorArea(): Promise<Record<string, string[]>> {
   try {
+    const hoy = hoyLocalISO()
     const { data, error } = await supabase
       .from('inv_sesiones')
-      .select('area_id, nombre_operador, created_at, liberada_at')
+      .select('area_id, nombre_operador, fecha, created_at, liberada_at')
       .is('liberada_at', null)
       .order('created_at', { ascending: true })
     if (error || !data) return {}
 
     // Nos quedamos con la fila más reciente por (área, nombre) — al estar
-    // ordenado ascendente, la última sobreescribe a las anteriores.
+    // ordenado ascendente, la última sobreescribe a las anteriores. Se
+    // descartan las que no sean de hoy antes de agruparlas.
     const ultimaPorClave = new Map<string, any>()
     for (const row of data as any[]) {
       if (!row.area_id) continue
+      if (String(row.fecha || row.created_at || '').slice(0, 10) !== hoy) continue
       const clave = `${row.area_id}::${String(row.nombre_operador).toLowerCase()}`
       ultimaPorClave.set(clave, row)
     }
@@ -181,6 +188,31 @@ export async function obtenerLotesPorArea(
       .eq('area_id', areaId)
     if (error) return null
     return data ?? []
+  } catch {
+    return null
+  }
+}
+
+/**
+ * El id de la sesión (sin liberar) más reciente de un operador en un área —
+ * obtenerOperadoresHoyPorArea() solo devuelve nombres, no ids, así que esto
+ * es lo que permite liberar a alguien desde CUALQUIER celular (botón
+ * "Liberar con clave de supervisor" en SesionSelector), no solo desde el
+ * teléfono donde esa persona inició sesión.
+ */
+export async function obtenerSesionIdOcupante(areaId: string, nombreOperador: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('inv_sesiones')
+      .select('id')
+      .eq('area_id', areaId)
+      .ilike('nombre_operador', nombreOperador)
+      .is('liberada_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (error || !data) return null
+    return data.id
   } catch {
     return null
   }

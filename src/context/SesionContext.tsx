@@ -200,14 +200,22 @@ export function SesionProvider({ children }: { children: ReactNode }) {
    */
   async function salirSesion(): Promise<boolean> {
     if (!sesion) return true
-    const ok = await liberarConReintento(sesion.id)
-    if (!ok) return false
+    try {
+      const ok = await liberarConReintento(sesion.id)
+      if (!ok) return false
 
-    const db = getDatabase()
-    await db.runAsync('UPDATE inv_sesiones SET activa = 0 WHERE id = ?', [sesion.id])
-    setSesion(null)
-    await recargarSesiones()
-    return true
+      const db = getDatabase()
+      await db.runAsync('UPDATE inv_sesiones SET activa = 0 WHERE id = ?', [sesion.id])
+      setSesion(null)
+      await recargarSesiones()
+      return true
+    } catch (e) {
+      // No dejar que un error puntual de SQLite (ej. "database is locked"
+      // por una sincronización en segundo plano justo en ese momento)
+      // tumbe la pantalla con un crash — se trata como "no se pudo salir".
+      console.error(e)
+      return false
+    }
   }
 
   return (
