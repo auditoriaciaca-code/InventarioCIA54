@@ -122,6 +122,16 @@ async function migrarBase(): Promise<void> {
   try {
     await db.execAsync(`ALTER TABLE inv_sesiones ADD COLUMN pendiente_liberar INTEGER DEFAULT 0`)
   } catch {}
+  try {
+    // La categoría "otros" (materiales creados en campo) se agregó
+    // después de que seedMateriales() ya hubiera corrido en los celulares
+    // existentes (esa función solo siembra una vez, si la tabla está
+    // vacía) — sin este INSERT, guardar una pesada con material_id='otros'
+    // viola la FOREIGN KEY de inv_registros y falla en silencio.
+    await db.runAsync(
+      `INSERT OR IGNORE INTO inv_materiales (id, nombre, codigo, icono) VALUES ('otros', 'Otros', 'OTROS', '📦')`
+    )
+  } catch {}
 }
 
 async function seedMateriales(): Promise<void> {

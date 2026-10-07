@@ -1169,3 +1169,17 @@ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE inv_materiales_otros;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- =====================================================================
+-- FALTABA "OTROS" EN EL CATÁLOGO DE MATERIALES  (2026-10-07)
+-- Bug real: inv_registros.material_id tiene FOREIGN KEY contra
+-- inv_materiales(id). Al agregar la categoría "otros" (ver bloque
+-- "MATERIALES OTROS CREADOS EN CAMPO" arriba) se me olvidó agregar la
+-- fila correspondiente en inv_materiales — cualquier intento de guardar
+-- una pesada con material de "Otros" quedaba RECHAZADO por Supabase
+-- (la violación de la llave foránea), sin llegar nunca a sincronizar ni
+-- a compararse con el otro operador.
+-- =====================================================================
+INSERT INTO inv_materiales (id, nombre, codigo, icono) VALUES
+  ('otros', 'Otros', 'OTROS', '📦')
+ON CONFLICT (id) DO NOTHING;
